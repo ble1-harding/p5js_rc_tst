@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Sketch</title>
+    <title>3D Node Editor</title>
 
     <link rel="stylesheet" type="text/css" href="style.css">
 
@@ -13,6 +13,31 @@
   </head>
 
   <body>
+    <div id="panel">
+      <h3>Node Controls</h3>
+      <div id="selectedInfo">No node selected</div>
+      <label>X: <input id="coordX" type="number" step="0.1" /></label>
+      <label>Y: <input id="coordY" type="number" step="0.1" /></label>
+      <label>Z: <input id="coordZ" type="number" step="0.1" /></label>
+      <div class="btnRow">
+        <button id="createBtn">Create Node</button>
+        <button id="dupBtn">Duplicate</button>
+        <button id="delBtn">Delete</button>
+      </div>
+      <div class="btnRow">
+        <button id="updateBtn">Update Coords</button>
+        <button id="saveBtn">Save JSON</button>
+        <button id="loadSavedBtn">Load Saved</button>
+      </div>
+      <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+        <input id="fileInput" type="file" accept="application/json" style="flex:1" />
+        <button id="loadFileBtn">Load File</button>
+      </div>
+      <h4>Nodes</h4>
+      <div id="nodeList"></div>
+      <div class="help">Move camera: mouse drag / scroll. Select node: click. Nudge selected: arrow keys, PageUp/PageDown for Z.</div>
+    </div>
+
     <script src="sketch.js"></script>
   </body>
 </html>
