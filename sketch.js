@@ -516,31 +516,71 @@ function mouseReleased() {
 
 
 function worldToScreen(pos) {
-  // TODO: fix to convert 3d world coordinate to screen 2d coordinate
-  let screen_pos = {
-    x: 0,
-    y: 0,
-    z: 0
-  };
-
-  if (screen_pos.z > 1 || screen_pos.z < 0) {
-    return {
-      x: -1e9,
-      y: -1e9,
-      z: screen_pos.z
-    };
+  // Convert 3D world coordinate to 2D screen coordinate
+  let forward = camera3D.getForwardVector();
+  let right = camera3D.getRightVector();
+  let up = p5.Vector.cross(right, forward);
+  
+  // Vector from camera to point
+  let toPoint = p5.Vector.sub(pos, camera3D.pos);
+  
+  // Project onto camera axes
+  let x = p5.Vector.dot(toPoint, right);
+  let y = p5.Vector.dot(toPoint, up);
+  let z = p5.Vector.dot(toPoint, forward);
+  
+  // Perspective projection
+  if (z <= 0.1) {
+    return { x: -9999, y: -9999, z: z }; // Behind camera
   }
+  
+  let fov = PI / 3; // 60 degrees field of view
+  let aspect = width / height;
+  let f = height / (2 * tan(fov / 2));
+  
+  let screenX = (x * f / z) + width / 2;
+  let screenY = (-y * f / z) + height / 2;
+  
+  return { x: screenX, y: screenY, z: z };
+}
 
-  return screen_pos;
+function getRayFromMouse() {
+  // Convert mouse position to ray in world space
+  let fov = PI / 3; // 60 degrees field of view
+  let aspect = width / height;
+  
+  // Normalized device coordinates (-1 to 1)
+  let ndcX = (2 * mouseX / width) - 1;
+  let ndcY = 1 - (2 * mouseY / height);
+  
+  // Camera space direction
+  let f = 1 / tan(fov / 2);
+  let camX = ndcX / f * aspect;
+  let camY = ndcY / f;
+  let camZ = -1;
+  
+  // Transform to world space
+  let forward = camera3D.getForwardVector();
+  let right = camera3D.getRightVector();
+  let up = p5.Vector.cross(right, forward);
+  
+  let dir = createVector(
+    camX * right.x + camY * up.x + camZ * forward.x,
+    camX * right.y + camY * up.y + camZ * forward.y,
+    camX * right.z + camY * up.z + camZ * forward.z
+  ).normalize();
+  
+  return {
+    origin: camera3D.pos.copy(),
+    dir: dir
+  };
 }
 
 function screenRadiusForWorldSize(pos, worldRadius) {
   // approximate the screen-space radius of a sphere of worldRadius at pos
   let center = worldToScreen(pos);
   if (center.z <= 0) return 0;
-  // offset a point to the right by worldRadius in world space (approx using camera right vector)
-  // get a small world-space offset in camera right direction
-  let forward = camera3D.getForwardVector();
+  // offset a point to the right by worldRadius in world space
   let right = camera3D.getRightVector();
   let offsetPoint = p5.Vector.add(pos, p5.Vector.mult(right, worldRadius));
   let off = worldToScreen(offsetPoint);
