@@ -231,6 +231,59 @@ function draw() {
     hudPanel.syncCoordInputs();
   }
 
+  // Update DOM debug panel
+  renderDebugHUD();
+}
+
+function renderDebugHUD() {
+  // output debug information into the #debug DOM element
+  try {
+    let dbg = document.getElementById('debug');
+    if (!dbg) {
+      dbg = document.createElement('div'); dbg.id = 'debug'; document.body.appendChild(dbg);
+    }
+    let lines = [];
+    if (camera3D) {
+      lines.push('<strong>Player:</strong> ' + nf(camera3D.pos.x,1,1) + ', ' + nf(camera3D.pos.y,1,1) + ', ' + nf(camera3D.pos.z,1,1) + '<br>');
+      lines.push('<strong>Yaw, Pitch:</strong> ' + nf(camera3D.yaw,1,2) + ', ' + nf(camera3D.pitch,1,2) + '<br>');
+    }
+    lines.push('<strong>Mouse:</strong> (' + nf(mouseX,1,0) + ', ' + nf(mouseY,1,0) + ')<br>');
+    try {
+      let r = getRayFromMouse();
+      lines.push('<strong>Ray O:</strong> ' + nf(r.origin.x,1,1) + ',' + nf(r.origin.y,1,1) + ',' + nf(r.origin.z,1,1) + '<br>');
+      lines.push('<strong>Ray D:</strong> ' + nf(r.dir.x,1,2) + ',' + nf(r.dir.y,1,2) + ',' + nf(r.dir.z,1,2) + '<br>');
+    } catch (e) {}
+    let selText = 'none';
+    if (selectedVertexIndex >= 0) {
+      selText = (selectedIsControl ? 'Control ' : 'Vertex ') + selectedVertexIndex;
+      let v = selectedIsControl ? (coaster.controls[selectedVertexIndex] || null) : coaster.getVertex(selectedVertexIndex);
+      if (v) selText += ' (' + nf(v.position.x,1,1) + ',' + nf(v.position.y,1,1) + ',' + nf(v.position.z,1,1) + ')';
+    }
+    lines.push('<strong>Selected:</strong> ' + selText + '<br>');
+    lines.push('<strong>View:</strong> ' + (viewpoints[currentViewpoint] ? viewpoints[currentViewpoint].name : '—') + '<br>');
+    
+    // Per-vertex pick debug
+    lines.push('<strong style="color:#f90; margin-top:10px;">==== PICK DEBUG ====</strong>');
+    for (let i = 0; i < coaster.getVertexCount(); i++) {
+      let v = coaster.getVertex(i);
+      let sp = worldToScreen(v.position);
+      let r = max(8, screenRadiusForWorldSize(v.position, 15));
+      let distp = dist(mouseX, mouseY, sp.x, sp.y);
+      let isHit = distp <= r;
+      lines.push('<div style="' + (isHit ? 'color:#0f0' : 'color:#999') + '"><strong>V' + i + ':</strong> scr(' + nf(sp.x,1,0) + ',' + nf(sp.y,1,0) + ') r=' + nf(r,1,1) + ' d=' + nf(distp,1,1) + (isHit ? ' ✓HIT' : '') + '</div>');
+    }
+    for (let i = 0; i < (coaster.controls ? coaster.controls.length : 0); i++) {
+      let cv = coaster.controls[i];
+      if (!cv) continue;
+      let sp = worldToScreen(cv.position);
+      let r = max(6, screenRadiusForWorldSize(cv.position, 8));
+      let distp = dist(mouseX, mouseY, sp.x, sp.y);
+      let isHit = distp <= r;
+      lines.push('<div style="' + (isHit ? 'color:#0f0' : 'color:#999') + '"><strong>C' + i + ':</strong> scr(' + nf(sp.x,1,0) + ',' + nf(sp.y,1,0) + ') r=' + nf(r,1,1) + ' d=' + nf(distp,1,1) + (isHit ? ' ✓HIT' : '') + '</div>');
+    }
+    
+    dbg.innerHTML = lines.map(l => typeof l === 'string' && (l.startsWith('<div') || l.startsWith('<strong')) ? l : '<div>' + l + '</div>').join('');
+  } catch (e) {}
 }
 
 
@@ -438,10 +491,11 @@ function mouseReleased() {
 
 
 function worldToScreen(pos) {
+  // TODO: fix to convert 3d world coordinate to screen 2d coordinate
   let screen_pos = {
-    x: screenX(pos.x, pos.y, pos.z),
-    y: screenY(pos.x, pos.y, pos.z),
-    z: screenZ(pos.x, pos.y, pos.z)
+    x: 0,
+    y: 0,
+    z: 0
   };
 
   if (screen_pos.z > 1 || screen_pos.z < 0) {
