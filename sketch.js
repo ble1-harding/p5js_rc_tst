@@ -872,6 +872,9 @@ class Coaster {
       }
     }
     
+    // Update HUD highlighting
+    this.updateHUDHighlighting(hoveredIndex, hoveredIsControl);
+    
     for (let i = 0; i < this.vertices.length; i++) {
       let v = this.vertices[i];
       v.selected = (!selectedIsControl && i === selectedVertexIndex);
@@ -890,6 +893,42 @@ class Coaster {
     
     for (let c of this.curves) {
       c.render();
+    }
+  }
+  
+  updateHUDHighlighting(hoveredIndex, hoveredIsControl) {
+    // Clear all HUD highlights first
+    let hudVertices = document.querySelectorAll('.hud-vertex');
+    hudVertices.forEach(el => {
+      if (!el.classList.contains('selected')) {
+        el.style.backgroundColor = '';
+        el.style.border = '';
+      }
+    });
+    
+    // Add hover highlight to HUD
+    if (hoveredIndex >= 0) {
+      let selector = `.hud-vertex[data-index="${hoveredIndex}"][data-is-control="${hoveredIsControl}"]`;
+      let hudElement = document.querySelector(selector);
+      if (hudElement && !hudElement.classList.contains('selected')) {
+        if (hoveredIsControl) {
+          hudElement.style.backgroundColor = 'rgba(255, 200, 100, 0.05)';
+          hudElement.style.border = '1px solid rgba(255, 200, 100, 0.15)';
+        } else {
+          hudElement.style.backgroundColor = 'rgba(100, 200, 255, 0.05)';
+          hudElement.style.border = '1px solid rgba(100, 200, 255, 0.15)';
+        }
+      }
+    }
+    
+    // Add selection highlight to HUD
+    if (selectedVertexIndex >= 0) {
+      let selector = `.hud-vertex[data-index="${selectedVertexIndex}"][data-is-control="${selectedIsControl}"]`;
+      let hudElement = document.querySelector(selector);
+      if (hudElement) {
+        hudElement.style.backgroundColor = 'rgba(255, 0, 255, 0.08)';
+        hudElement.style.border = '1px solid rgba(255, 0, 255, 0.2)';
+      }
     }
   }
   
@@ -1150,8 +1189,18 @@ class HUDPanel {
         div.appendChild(content);
         div.appendChild(del);
         div.addEventListener('click', ()=>{ selectedVertexIndex = i; selectedIsControl = false; this.syncCoordInputs(); });
-        div.addEventListener('mouseenter', ()=>{ div.style.backgroundColor = '#444'; });
-        div.addEventListener('mouseleave', ()=>{ div.style.backgroundColor = ''; });
+        div.addEventListener('mouseenter', ()=>{ 
+          if (!(i === selectedIndex && !selectedIsControl)) {
+            div.style.backgroundColor = 'rgba(100, 200, 255, 0.1)';
+            div.style.border = '1px solid rgba(100, 200, 255, 0.3)';
+          }
+        });
+        div.addEventListener('mouseleave', ()=>{ 
+          if (!(i === selectedIndex && !selectedIsControl)) {
+            div.style.backgroundColor = '';
+            div.style.border = '';
+          }
+        });
         this.vertexList.appendChild(div);
         
         // add control vertex if present
@@ -1162,8 +1211,18 @@ class HUDPanel {
           let ccontent = document.createElement('div'); ccontent.className='hud-vertex-content'; ccontent.innerHTML = '<strong style="color:#fc8">CONTROL '+i+'</strong><div>X: '+cv.position.x.toFixed(1)+', Y: '+cv.position.y.toFixed(1)+', Z: '+cv.position.z.toFixed(1)+'</div>';
           cdiv.appendChild(ccontent);
           cdiv.addEventListener('click', ()=>{ selectedVertexIndex = i; selectedIsControl = true; this.syncCoordInputs(); });
-          cdiv.addEventListener('mouseenter', ()=>{ cdiv.style.backgroundColor = '#444'; });
-          cdiv.addEventListener('mouseleave', ()=>{ cdiv.style.backgroundColor = ''; });
+          cdiv.addEventListener('mouseenter', ()=>{ 
+            if (!(i === selectedIndex && selectedIsControl)) {
+              cdiv.style.backgroundColor = 'rgba(255, 200, 100, 0.1)';
+              cdiv.style.border = '1px solid rgba(255, 200, 100, 0.3)';
+            }
+          });
+          cdiv.addEventListener('mouseleave', ()=>{ 
+            if (!(i === selectedIndex && selectedIsControl)) {
+              cdiv.style.backgroundColor = '';
+              cdiv.style.border = '';
+            }
+          });
           this.vertexList.appendChild(cdiv);
         }
       }
