@@ -305,14 +305,14 @@ function processControls() {
   if (keys['_4']) { currentViewpoint = 3; camera3D.snapToView(viewpoints[3]); }
   
   // Add vertex: V (avoid colliding with WASD movement)
-  if (keys.pressStart && keys['_v']) {
+  if (keysPressedDown['_v']) {
     coaster.addVertex(createVector(random(-300, 300), random(-200, 0), random(-300, 300)));
     _hudNeedsUpdate = true;
     hudPanel.deleteClicked = false;
   }
   // Delete vertex: Delete or Backspace (avoids conflict with D movement)
   // keys.pressStart ensures that vertecies aren't deleted every single frame the key is held
-  if (keys.pressStart && (keys[BACKSPACE] || keys[DELETE])) {
+  if (keysPressedDown[BACKSPACE] || keysPressedDown[DELETE]) {
     if (selectedVertexIndex >= 0) {
       if (selectedIsControl) {
         // remove control handle
@@ -794,9 +794,14 @@ class Coaster {
   deleteVertex(index) {
     if (index >= 0 && index < this.vertices.length) {
       this.vertices.splice(index, 1);
-      // remove corresponding control(s)
-      if (index < this.controls.length) this.controls.splice(index, 1);
-      // if deleting middle vertex, the preceding control remains valid
+      // remove corresponding control - if deleting last vertex, remove the control before it
+      if (index === this.vertices.length && index > 0) {
+        // deleting last vertex, remove control at index-1
+        if (this.controls[index - 1]) this.controls.splice(index - 1, 1);
+      } else if (index < this.controls.length) {
+        // deleting middle vertex, remove control at same index
+        this.controls.splice(index, 1);
+      }
       this.updateCurves();
     }
   }
@@ -1130,10 +1135,12 @@ class HUDPanel {
         let v = coaster.getVertex(i);
         let div = document.createElement('div'); div.className='hud-vertex'+(i===selectedIndex && !selectedIsControl?' selected':'');
         div.dataset.index = i; div.dataset.isControl = false;
-        div.innerHTML = '<strong>Vertex '+i+'</strong><div>X: '+v.position.x.toFixed(1)+', Y: '+v.position.y.toFixed(1)+', Z: '+v.position.z.toFixed(1)+'</div>';
-        let del = document.createElement('button'); del.className='hud-btn'; del.innerText='Delete'; del.addEventListener('click', (ev)=>{ ev.stopPropagation(); coaster.deleteVertex(i); if (selectedVertexIndex===i){ selectedVertexIndex=-1; selectedIsControl=false; } this.render(coaster, selectedIndex); });
+        div.innerHTML = '<strong>Vertex '+i+'</strong><div style="margin-top: 5px;">X: '+v.position.x.toFixed(1)+', Y: '+v.position.y.toFixed(1)+', Z: '+v.position.z.toFixed(1)+'</div>';
+        let del = document.createElement('button'); del.className='hud-btn'; del.innerText='Delete'; del.style.marginTop = '5px'; del.addEventListener('click', (ev)=>{ ev.stopPropagation(); coaster.deleteVertex(i); if (selectedVertexIndex===i){ selectedVertexIndex=-1; selectedIsControl=false; } this.render(coaster, selectedIndex); });
         div.appendChild(del);
         div.addEventListener('click', ()=>{ selectedVertexIndex = i; selectedIsControl = false; this.syncCoordInputs(); });
+        div.addEventListener('mouseenter', ()=>{ div.style.backgroundColor = '#444'; });
+        div.addEventListener('mouseleave', ()=>{ div.style.backgroundColor = ''; });
         this.vertexList.appendChild(div);
         
         // add control vertex if present
@@ -1141,10 +1148,10 @@ class HUDPanel {
           let cv = coaster.controls[i];
           let cdiv = document.createElement('div'); cdiv.className='hud-vertex hud-control'+(i===selectedIndex && selectedIsControl?' selected':'');
           cdiv.dataset.index = i; cdiv.dataset.isControl = true;
-          cdiv.innerHTML = '<strong style="color:#fc8">CONTROL '+i+'</strong><div>X: '+cv.position.x.toFixed(1)+', Y: '+cv.position.y.toFixed(1)+', Z: '+cv.position.z.toFixed(1)+'</div>';
-          let cdel = document.createElement('button'); cdel.className='hud-btn'; cdel.innerText='Delete'; cdel.addEventListener('click', (ev)=>{ ev.stopPropagation(); if (coaster.controls[i]) coaster.controls.splice(i,1); coaster.updateCurves(); saveSettings(); if (selectedVertexIndex===i && selectedIsControl){ selectedVertexIndex=-1; selectedIsControl=false; } this.render(coaster, selectedIndex); });
-          cdiv.appendChild(cdel);
+          cdiv.innerHTML = '<strong style="color:#fc8">CONTROL '+i+'</strong><div style="margin-top: 5px;">X: '+cv.position.x.toFixed(1)+', Y: '+cv.position.y.toFixed(1)+', Z: '+cv.position.z.toFixed(1)+'</div>';
           cdiv.addEventListener('click', ()=>{ selectedVertexIndex = i; selectedIsControl = true; this.syncCoordInputs(); });
+          cdiv.addEventListener('mouseenter', ()=>{ cdiv.style.backgroundColor = '#444'; });
+          cdiv.addEventListener('mouseleave', ()=>{ cdiv.style.backgroundColor = ''; });
           this.vertexList.appendChild(cdiv);
         }
       }
@@ -1172,4 +1179,3 @@ class HUDPanel {
     return (mouseX >= rect.left && mouseX <= rect.right && mouseY >= rect.top && mouseY <= rect.bottom);
   }
 }
-//waka_cc369c3d-8135-4f86-87f3-38d288b6b13c
