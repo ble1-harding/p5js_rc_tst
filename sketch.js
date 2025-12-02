@@ -213,6 +213,8 @@ function setup() {
 
 function draw() {
   background(50);
+
+  processControls();
   
   // Lighting
   lights();
@@ -292,7 +294,7 @@ function renderDebugHUD() {
 
 
 function processControls() {
-  if (keys['_1']) { currentViewpoint = 0; camera3D.snapToView(viewpoints[0]); }
+  if (keys['_1']) { console.log(true);currentViewpoint = 0; camera3D.snapToView(viewpoints[0]); }
   if (keys['_2']) { currentViewpoint = 1; camera3D.snapToView(viewpoints[1]); }
   if (keys['_3']) { currentViewpoint = 2; camera3D.snapToView(viewpoints[2]); }
   if (keys['_4']) { currentViewpoint = 3; camera3D.snapToView(viewpoints[3]); }
@@ -304,7 +306,8 @@ function processControls() {
     hudPanel.deleteClicked = false;
   }
   // Delete vertex: Delete or Backspace (avoids conflict with D movement)
-  if (keyCode === BACKSPACE || keyCode === DELETE) {
+  // keys.pressStart ensures that vertecies aren't deleted every single frame the key is held
+  if (keys.pressStart && (keys[BACKSPACE] || keys[DELETE])) {
     if (selectedVertexIndex >= 0) {
       if (selectedIsControl) {
         // remove control handle
@@ -344,20 +347,20 @@ function processControls() {
     let v = selectedIsControl ? (coaster.controls[selectedVertexIndex] || null) : coaster.getVertex(selectedVertexIndex);
     let speed = keyIsDown(SHIFT) ? 10 : 5;
     
-    if (keyCode === LEFT_ARROW) {
+    if (keys[LEFT_ARROW]) {
       v.position.x -= speed;
     }
-    if (keyCode === RIGHT_ARROW) {
+    if (keys[RIGHT_ARROW]) {
       v.position.x += speed;
     }
-    if (keyCode === UP_ARROW) {
+    if (keys[UP_ARROW]) {
       if (keyIsDown(CTRL) || keyIsDown(META)) {
         v.position.z += speed;
       } else {
         v.position.y -= speed;
       }
     }
-    if (keyCode === DOWN_ARROW) {
+    if (keys[DOWN_ARROW]) {
       if (keyIsDown(CTRL) || keyIsDown(META)) {
         v.position.z -= speed;
       } else {
@@ -367,18 +370,25 @@ function processControls() {
     
     coaster.updateCurves();
   }
+
+
+
+  keys['pressStart'] = false;
+  keys['pressStop'] = false;
 }
 
 function keyPressed() {
   // For key press checks, simply check if `key[(keycode)]` or `key[_(lowercased key)]` is true
   keys[keyCode] = true;
   keys['_' + key.toString().toLowerCase()] = true;
+  keys['pressStart'] = true;
 }
 
 function keyReleased() {
   // Resets key press value if released
   keys[keyCode] = false;
   keys['_' + key.toString().toLowerCase()] = false;
+  keys['pressStop'] = true;
 }
 
 function mouseDragged() {
