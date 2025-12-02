@@ -287,10 +287,6 @@ function renderDebugHUD() {
       let cv = coaster.controls[i];
       if (!cv) continue;
       let sp = worldToScreen(cv.position);
-      hud.background(0, 0)
-      hud.fill(255, 255, 0)
-      hud.noStroke();
-      hud.ellipse(sp.x, sp.y, 12, 12);
       let r = max(6, screenRadiusForWorldSize(cv.position, 8));
       let distp = dist(mouseX, mouseY, sp.x, sp.y);
       let isHit = distp <= r;
@@ -527,58 +523,47 @@ function mouseReleased() {
 
 
 function worldToScreen(pos) {
-  // Convert 3D world coordinate to 2D screen coordinate
   let forward = camera3D.getForwardVector();
   let right = camera3D.getRightVector();
   let up = p5.Vector.cross(right, forward);
   
-  // Vector from camera to point
   let toPoint = p5.Vector.sub(pos, camera3D.pos);
   
-  // Project onto camera axes
   let x = p5.Vector.dot(toPoint, right);
   let y = p5.Vector.dot(toPoint, up);
   let z = p5.Vector.dot(toPoint, forward);
   
-  // Perspective projection
-  if (z <= 0.1) {
-    return { x: -9999, y: -9999, z: z }; // Behind camera
-  }
+  if (z <= 0.1) return { x: -9999, y: -9999, z: z };
   
-  let fov = PI / 3; // 60 degrees field of view
+  let fov = PI / 3;
   let aspect = width / height;
   let f = height / (2 * tan(fov / 2));
   
-  let screenX = (x * f / z) + width / 2;
-  let screenY = (-y * f / z) + height / 2;
-  
-  return { x: screenX, y: screenY, z: z };
+  return {
+    x: (x * f / (z * aspect)) + width / 2,
+    y: (y * f / z) + height / 2,
+    z: z
+  };
 }
 
 function getRayFromMouse() {
-  // Convert mouse position to ray in world space
-  let fov = PI / 3; // 60 degrees field of view
+  let fov = PI / 3;
   let aspect = width / height;
+  let f = height / (2 * tan(fov / 2));
   
-  // Normalized device coordinates (-1 to 1)
-  let ndcX = (2 * mouseX / width) - 1;
-  let ndcY = 1 - (2 * mouseY / height);
-  
-  // Camera space direction
-  let f = 1 / tan(fov / 2);
-  let camX = ndcX / f * aspect;
-  let camY = ndcY / f;
-  let camZ = -1;
-  
-  // Transform to world space
   let forward = camera3D.getForwardVector();
   let right = camera3D.getRightVector();
   let up = p5.Vector.cross(right, forward);
   
-  let dir = createVector(
-    camX * right.x + camY * up.x + camZ * forward.x,
-    camX * right.y + camY * up.y + camZ * forward.y,
-    camX * right.z + camY * up.z + camZ * forward.z
+  let camX = (mouseX - width / 2) * aspect / f;
+  let camY = (mouseY - height / 2) / f;
+  
+  let dir = p5.Vector.add(
+    p5.Vector.add(
+      p5.Vector.mult(right, camX),
+      p5.Vector.mult(up, camY)
+    ),
+    forward
   ).normalize();
   
   return {
