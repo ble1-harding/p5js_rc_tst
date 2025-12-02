@@ -1,5 +1,8 @@
 // Rollercoaster Modeling Program
 // 3D vertex-based track design with curve templates and HUD manipulation
+// Mon 1 Dec 2025
+// ble
+// made with microsoft copilot
 
 let coaster;
 let hudPanel;
@@ -539,10 +542,11 @@ function worldToCameraSpace(pos) {
   let y0 = cosp * rel.y - sinp * rel.z;
   let z0 = sinp * rel.y + cosp * rel.z;
   // then rotate around Y by -yaw
-  let cosy = cos(yaw), siny = sin(yaw);
-  let x1 = cosy * x0 + siny * z0;
-  let z1 = -siny * x0 + cosy * z0;
-  return createVector(x1, y0, z1);
+  let cosy = cos(yaw), siny = sin(yaw); // Corrected variable name from sinY to siny for consistency
+  let x1 = cosy * x0 + siny * z0; // Correct
+  let y1 = y0; // The Y coordinate is not changed by a rotation around the Y axis.
+  let z1 = -siny * x0 + cosy * z0; // Correct
+  return createVector(x1, y1, z1);
 }
 
 function worldToScreen(pos) {
