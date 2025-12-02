@@ -231,60 +231,9 @@ function draw() {
     hudPanel.syncCoordInputs();
   }
 
-  // Update DOM debug panel
-  renderDebugHUD();
 }
 
-function renderDebugHUD() {
-  // output debug information into the #debug DOM element
-  try {
-    let dbg = document.getElementById('debug');
-    if (!dbg) {
-      dbg = document.createElement('div'); dbg.id = 'debug'; document.body.appendChild(dbg);
-    }
-    let lines = [];
-    if (camera3D) {
-      lines.push('<strong>Player:</strong> ' + nf(camera3D.pos.x,1,1) + ', ' + nf(camera3D.pos.y,1,1) + ', ' + nf(camera3D.pos.z,1,1));
-      lines.push('<strong>Yaw/Pitch:</strong> ' + nf(camera3D.yaw,1,2) + ', ' + nf(camera3D.pitch,1,2));
-    }
-    lines.push('<strong>Mouse:</strong> ' + nf(mouseX,1,0) + ', ' + nf(mouseY,1,0));
-    try {
-      let r = getRayFromMouse();
-      lines.push('<strong>Ray O:</strong> ' + nf(r.origin.x,1,1) + ',' + nf(r.origin.y,1,1) + ',' + nf(r.origin.z,1,1));
-      lines.push('<strong>Ray D:</strong> ' + nf(r.dir.x,1,2) + ',' + nf(r.dir.y,1,2) + ',' + nf(r.dir.z,1,2));
-    } catch (e) {}
-    let selText = 'none';
-    if (selectedVertexIndex >= 0) {
-      selText = (selectedIsControl ? 'Control ' : 'Vertex ') + selectedVertexIndex;
-      let v = selectedIsControl ? (coaster.controls[selectedVertexIndex] || null) : coaster.getVertex(selectedVertexIndex);
-      if (v) selText += ' (' + nf(v.position.x,1,1) + ',' + nf(v.position.y,1,1) + ',' + nf(v.position.z,1,1) + ')';
-    }
-    lines.push('<strong>Selected:</strong> ' + selText);
-    lines.push('<strong>View:</strong> ' + (viewpoints[currentViewpoint] ? viewpoints[currentViewpoint].name : '—'));
-    
-    // Per-vertex pick debug
-    lines.push('<strong style="color:#f90; margin-top:10px;">==== PICK DEBUG ====</strong>');
-    for (let i = 0; i < coaster.getVertexCount(); i++) {
-      let v = coaster.getVertex(i);
-      let sp = worldToScreen(v.position);
-      let r = max(8, screenRadiusForWorldSize(v.position, 15));
-      let distp = dist(mouseX, mouseY, sp.x, sp.y);
-      let isHit = distp <= r;
-      lines.push('<div style="' + (isHit ? 'color:#0f0' : 'color:#999') + '"><strong>V' + i + ':</strong> scr(' + nf(sp.x,1,0) + ',' + nf(sp.y,1,0) + ') r=' + nf(r,1,1) + ' d=' + nf(distp,1,1) + (isHit ? ' ✓HIT' : '') + '</div>');
-    }
-    for (let i = 0; i < (coaster.controls ? coaster.controls.length : 0); i++) {
-      let cv = coaster.controls[i];
-      if (!cv) continue;
-      let sp = worldToScreen(cv.position);
-      let r = max(6, screenRadiusForWorldSize(cv.position, 8));
-      let distp = dist(mouseX, mouseY, sp.x, sp.y);
-      let isHit = distp <= r;
-      lines.push('<div style="' + (isHit ? 'color:#0f0' : 'color:#999') + '"><strong>C' + i + ':</strong> scr(' + nf(sp.x,1,0) + ',' + nf(sp.y,1,0) + ') r=' + nf(r,1,1) + ' d=' + nf(distp,1,1) + (isHit ? ' ✓HIT' : '') + '</div>');
-    }
-    
-    dbg.innerHTML = lines.map(l => typeof l === 'string' && (l.startsWith('<div') || l.startsWith('<strong')) ? l : '<div>' + l + '</div>').join('');
-  } catch (e) {}
-}
+
 
 function keyPressed() {
   if (key === '1') { currentViewpoint = 0; camera3D.snapToView(viewpoints[0]); }
@@ -375,26 +324,9 @@ function mouseDragged() {
     _isDragging = true;
   }
 
-  // If user holds M while dragging and a vertex/control is selected, move it on grid
-  if (!hudPanel.mouseOverHUD() && keyIsDown(77) && selectedVertexIndex >= 0) {
-    let r = getRayFromMouse();
-    let plane = getGridPlane();
-    let denom = p5.Vector.dot(r.dir, plane.normal);
-    if (abs(denom) > 1e-6) {
-      let t = p5.Vector.dot(p5.Vector.sub(plane.point, r.origin), plane.normal) / denom;
-      if (t > 0) {
-        let ip = p5.Vector.add(r.origin, p5.Vector.mult(r.dir, t));
-        if (selectedIsControl) {
-          coaster.updateControlPosition(selectedVertexIndex, ip);
-        } else {
-          coaster.updateVertexPosition(selectedVertexIndex, ip);
-        }
-        coaster.updateCurves();
-      }
-    }
-  }
+
   // If dragging a selected vertex with left button, move it in camera-facing plane
-  else if (!hudPanel.mouseOverHUD() && _draggingVertex && mouseButton === LEFT && _draggedVertexIndex >= 0) {
+  if (!hudPanel.mouseOverHUD() && _draggingVertex && mouseButton === LEFT && _draggedVertexIndex >= 0) {
     let idx = _draggedVertexIndex;
     let isCtrl = _draggedIsControl;
     let r = getRayFromMouse();
@@ -497,75 +429,26 @@ function mouseReleased() {
   _isDragging = false;
 }
 
-function getRayFromMouse() {
-  // Return ray origin and direction in world space using camera yaw/pitch
-  // Convert screen coords to NDC
-  let nx = (mouseX / width - 0.5) * 2;
-  let ny = (mouseY / height - 0.5) * -2;
-  let fov = PI / 3; // p5 default
-  let aspect = width / height;
-  let xCam = nx * tan(fov / 2) * aspect;
-  let yCam = ny * tan(fov / 2);
-  // camera space ray points toward -Z
-  let rayCam = createVector(xCam, yCam, -1).normalize();
-  // rotate by camera yaw/pitch to world
-  let yaw = camera3D.yaw;
-  let pitch = camera3D.pitch;
-  // build rotation matrix (Yaw then Pitch)
-  // apply yaw (around Y) then pitch (around X)
-  let cosY = cos(yaw), sinY = sin(yaw);
-  let cosP = cos(pitch), sinP = sin(pitch);
-  // rotation: world = R_yaw * R_pitch * cam
-  // first rotate cam by pitch around X
-  let cx = rayCam.x;
-  let cy = cosP * rayCam.y - sinP * rayCam.z;
-  let cz = sinP * rayCam.y + cosP * rayCam.z;
-  // then yaw around Y
-  let wx = cosY * cx + sinY * cz;
-  let wy = cy;
-  let wz = -sinY * cx + cosY * cz;
-  let dir = createVector(wx, wy, wz).normalize();
-  let origin = camera3D.pos.copy();
-  return { origin, dir };
-}
 
-function worldToCameraSpace(pos) {
-  // transform world point into camera-local coordinates
-  let rel = p5.Vector.sub(pos, camera3D.pos);
-  // The camera applies pitch (X) then yaw (Y) to camera-space points to get world-space.
-  // To convert world->camera we must apply the inverse in reverse order: first inverse pitch, then inverse yaw.
-  let pitch = -camera3D.pitch;
-  let yaw = -camera3D.yaw;
-  // rotate around X by -pitch (inverse of pitch)
-  let cosp = cos(pitch), sinp = sin(pitch);
-  let x0 = rel.x;
-  let y0 = cosp * rel.y - sinp * rel.z;
-  let z0 = sinp * rel.y + cosp * rel.z;
-  // then rotate around Y by -yaw
-  let cosy = cos(yaw), siny = sin(yaw); // Corrected variable name from sinY to siny for consistency
-  let x1 = cosy * x0 + siny * z0; // Correct
-  let y1 = y0; // The Y coordinate is not changed by a rotation around the Y axis.
-  let z1 = -siny * x0 + cosy * z0; // Correct
-  return createVector(x1, y1, z1);
-}
+
+
 
 function worldToScreen(pos) {
-  // Project a world-space point to screen (pixel) coords using camera3D
-  let camSpace = worldToCameraSpace(pos);
-  // if point is behind camera, still project but z will be >0
-  let fov = PI / 3;
-  let scale = (height / 2) / tan(fov / 2);
-  // camera looks down -Z in camera space; so use -z for projection
-  let z = -camSpace.z;
-  // If point is behind the camera (z <= 0), return off-screen coords to avoid
-  // accidental picking or inverted projection.
-  if (z <= 0) {
-    return { x: -1e9, y: -1e9, z: z };
+  let screen_pos = {
+    x: screenX(pos.x, pos.y, pos.z),
+    y: screenY(pos.x, pos.y, pos.z),
+    z: screenZ(pos.x, pos.y, pos.z)
+  };
+
+  if (screen_pos.z > 1 || screen_pos.z < 0) {
+    return {
+      x: -1e9,
+      y: -1e9,
+      z: screen_pos.z
+    };
   }
-  if (abs(z) < 1e-6) z = 1e-6;
-  let sx = (width / 2) + (camSpace.x * scale) / z;
-  let sy = (height / 2) + (camSpace.y * scale) / z;
-  return { x: sx, y: sy, z: z };
+
+  return screen_pos;
 }
 
 function screenRadiusForWorldSize(pos, worldRadius) {
@@ -704,61 +587,7 @@ class CurveSegment {
   }
   
   getPoints() {
-    switch(this.type) {
-      case 'line': return this.getLinePoints();
-      case 'arc90': return this.getArcPoints(Math.PI / 2);
-      case 'arc45': return this.getArcPoints(Math.PI / 4);
-      case 'elliptical': return this.getEllipticalPoints();
-      case 'bezier': return this.getBezierPoints();
-      default: return this.getLinePoints();
-    }
-  }
-  
-  getLinePoints() {
-    let points = [];
-    for (let i = 0; i <= this.segments; i++) {
-      let t = i / this.segments;
-      let p = p5.Vector.lerp(this.start.position, this.end.position, t);
-      points.push(p);
-    }
-    return points;
-  }
-  
-  getArcPoints(angle) {
-    let points = [];
-    let startPos = this.start.position;
-    let endPos = this.end.position;
-    let midPoint = p5.Vector.add(startPos, endPos).mult(0.5);
-    
-    let radius = this.radius;
-    let startAngle = p5.Vector.sub(startPos, midPoint).heading();
-    
-    for (let i = 0; i <= this.segments; i++) {
-      let t = i / this.segments;
-      let currentAngle = startAngle + angle * t;
-      let x = midPoint.x + radius * cos(currentAngle);
-      let y = midPoint.y;
-      let z = midPoint.z + radius * sin(currentAngle);
-      points.push(createVector(x, y, z));
-    }
-    return points;
-  }
-  
-  getEllipticalPoints() {
-    let points = [];
-    let startPos = this.start.position;
-    let endPos = this.end.position;
-    let midPoint = p5.Vector.add(startPos, endPos).mult(0.5);
-    
-    for (let i = 0; i <= this.segments; i++) {
-      let t = i / this.segments;
-      let angle = TWO_PI * t;
-      let x = midPoint.x + this.radius * cos(angle);
-      let y = midPoint.y + this.radiusY * sin(angle);
-      let z = midPoint.z;
-      points.push(createVector(x, y, z));
-    }
-    return points;
+    return this.getBezierPoints();
   }
   
   getBezierPoints() {
@@ -926,11 +755,15 @@ class Camera3D {
     // Movement (WASD + QE)
     let move = createVector(0, 0, 0);
     if (!hudPanel.mouseOverHUD()) {
+      let horiz_movement = this.getForwardVector()
+      horiz_movement.y = 0;
+      horiz_movement.normalize();
       if (keyIsDown(87)) { // W
-        move.add(this.getForwardVector());
+        // move.add(this.getForwardVector());
+        move.add(horiz_movement)
       }
       if (keyIsDown(83)) { // S
-        move.sub(this.getForwardVector());
+        move.sub(horiz_movement);
       }
       if (keyIsDown(65)) { // A
         move.sub(this.getRightVector());
@@ -949,7 +782,7 @@ class Camera3D {
       if (keyIsDown(32)) { // SPACE
         move.y -= this.flySpeed;
       }
-      if (keyIsDown(17) || keyIsDown(CONTROL)) { // CTRL
+      if (keyIsDown(17) || keyIsDown(CONTROL) || keyIsDown(SHIFT)) { // CTRL
         move.y += this.flySpeed;
       }
     }
