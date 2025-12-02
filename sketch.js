@@ -355,10 +355,14 @@ function mouseDragged() {
     let dy = mouseY - pmouseY;
     camera3D.look(dx, dy);
   } else if (!hudPanel.mouseOverHUD() && mouseIsPressed && mouseButton === CENTER) {
-    // Middle button pan: translate camera sideways/up-down
+    // Middle button pan: translate camera sideways/up-down with momentum
+    const panSpeed = 0.1; // Adjust this to control pan sensitivity
     let right = camera3D.getRightVector();
-    camera3D.pos.add(p5.Vector.mult(right, -movedX * 0.5));
-    camera3D.pos.y += movedY * 0.5;
+    let panForce = p5.Vector.mult(right, -movedX * panSpeed);
+    panForce.y += movedY * panSpeed;
+    
+    camera3D.velocity.add(panForce);
+    camera3D._snapped = false; // cancel snap state if user pans
   }
 }
 
@@ -732,10 +736,18 @@ class Camera3D {
     this.pos = createVector(0, 0, 600);
     this.yaw = 0; // left/right
     this.pitch = 0; // up/down
+    this.yawVelocity = 0;
+    this.pitchVelocity = 0;
+    this.lookSensitivity = 0.0005;
+    this.angularFriction = 0.88;
     this.moveSpeed = 6;
     this.flySpeed = 4;
-    this.mouseSensitivity = 0.0025;
     this.smooth = 0.15;
+
+    this.velocity = createVector(0, 0, 0);
+    this.acceleration = 0.3;
+    this.friction = 0.9;
+
     this.targetPos = this.pos.copy();
     this.targetYaw = this.yaw;
     this.targetPitch = this.pitch;
@@ -743,6 +755,19 @@ class Camera3D {
   }
   
   update() {
+    // Apply angular momentum for look-around
+    this.yaw += this.yawVelocity;
+    this.pitch += this.pitchVelocity;
+
+    this.yawVelocity *= this.angularFriction;
+    this.pitchVelocity *= this.angularFriction;
+    
+    // Stop rotation if velocity is very low
+    if (abs(this.yawVelocity) < 0.00001) this.yawVelocity = 0;
+    if (abs(this.pitchVelocity) < 0.00001) this.pitchVelocity = 0;
+
+    this.pitch = constrain(this.pitch, -PI/2 + 0.01, PI/2 - 0.01);
+
     // If a viewpoint snap is active, smoothly move to that camera
     if (this._snapped) {
       // interpolate position and angles toward snap
@@ -752,15 +777,14 @@ class Camera3D {
       if (p5.Vector.dist(this.pos, this._snapPos) < 1) this._snapped = false;
     }
 
-    // Movement (WASD + QE)
+    // Movement (WASD + QE) with momentum
     let move = createVector(0, 0, 0);
     if (!hudPanel.mouseOverHUD()) {
-      let horiz_movement = this.getForwardVector()
+      let horiz_movement = this.getForwardVector();
       horiz_movement.y = 0;
       horiz_movement.normalize();
       if (keyIsDown(87)) { // W
-        // move.add(this.getForwardVector());
-        move.add(horiz_movement)
+        move.add(horiz_movement);
       }
       if (keyIsDown(83)) { // S
         move.sub(horiz_movement);
@@ -772,28 +796,42 @@ class Camera3D {
         move.add(this.getRightVector());
       }
       if (keyIsDown(81)) { // Q down
-        move.y -= this.flySpeed;
+        move.y -= 1; // Use 1 since it's a direction
       }
       if (keyIsDown(69)) { // E up
-        move.y += this.flySpeed;
+        move.y += 1;
       }
-      // Additional vertical controls: Space = up, Ctrl = down
-      // Space = down, Ctrl = up (flipped per user request)
+      // Additional vertical controls: Space = down, Ctrl/Shift = up
       if (keyIsDown(32)) { // SPACE
-        move.y -= this.flySpeed;
+        move.y -= 1;
       }
       if (keyIsDown(17) || keyIsDown(CONTROL) || keyIsDown(SHIFT)) { // CTRL
-        move.y += this.flySpeed;
+        move.y += 1;
       }
     }
 
     if (move.mag() > 0) {
       move.normalize();
-      move.mult(this.moveSpeed);
-      this.pos.add(move);
+      move.mult(this.acceleration);
+      this.velocity.add(move);
       // cancel snap state if user moves
       this._snapped = false;
+    } else {
+      // Apply friction when no keys are pressed
+      this.velocity.mult(this.friction);
     }
+
+    // Limit velocity to max speed
+    if (this.velocity.mag() > this.moveSpeed) {
+      this.velocity.normalize().mult(this.moveSpeed);
+    }
+    
+    // Stop movement if velocity is very low
+    if (this.velocity.mag() < 0.01) {
+        this.velocity.mult(0);
+    }
+
+    this.pos.add(this.velocity);
 
     // compute target (look-at) from yaw/pitch
     let forward = this.getForwardVector();
@@ -809,9 +847,8 @@ class Camera3D {
   
   // mouse look adjustments (dx, dy from mouse movement)
   look(dx, dy) {
-    this.yaw -= dx * this.mouseSensitivity;
-    this.pitch -= dy * this.mouseSensitivity;
-    this.pitch = constrain(this.pitch, -PI/2 + 0.01, PI/2 - 0.01);
+    this.yawVelocity -= dx * this.lookSensitivity;
+    this.pitchVelocity -= dy * this.lookSensitivity;
   }
 
   getForwardVector() {
