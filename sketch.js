@@ -177,8 +177,11 @@ function loadCoasterFromJSON(obj) {
   } catch (e) {}
 }
 
+let hud;
+
 function setup() {
   createCanvas(windowWidth, windowHeight, WEBGL);
+  hud = createGraphics(width, height);
   
   // Initialize coaster system
   coaster = new Coaster();
@@ -238,6 +241,9 @@ function draw() {
 
   // Update DOM debug panel
   renderDebugHUD();
+
+  texture(hud);
+
 }
 
 function renderDebugHUD() {
@@ -281,6 +287,10 @@ function renderDebugHUD() {
       let cv = coaster.controls[i];
       if (!cv) continue;
       let sp = worldToScreen(cv.position);
+      hud.background(0, 0)
+      hud.fill(255, 255, 0)
+      hud.noStroke();
+      hud.ellipse(sp.x, sp.y, 12, 12);
       let r = max(6, screenRadiusForWorldSize(cv.position, 8));
       let distp = dist(mouseX, mouseY, sp.x, sp.y);
       let isHit = distp <= r;
@@ -300,7 +310,7 @@ function processControls() {
   if (keys['_4']) { currentViewpoint = 3; camera3D.snapToView(viewpoints[3]); }
   
   // Add vertex: V (avoid colliding with WASD movement)
-  if (keys['_v']) {
+  if (keys.pressStart && keys['_v']) {
     coaster.addVertex(createVector(random(-300, 300), random(-200, 0), random(-300, 300)));
     _hudNeedsUpdate = true;
     hudPanel.deleteClicked = false;
@@ -345,27 +355,25 @@ function processControls() {
   // Coordinate editing with arrow keys
   if (selectedVertexIndex >= 0) {
     let v = selectedIsControl ? (coaster.controls[selectedVertexIndex] || null) : coaster.getVertex(selectedVertexIndex);
-    let speed = keyIsDown(SHIFT) ? 10 : 5;
+    let speed = keys[SHIFT] ? 10 : 5;
     
-    if (keys[LEFT_ARROW]) {
+    if (keys['_j']) {
       v.position.x -= speed;
     }
-    if (keys[RIGHT_ARROW]) {
+    if (keys['_l']) {
       v.position.x += speed;
     }
-    if (keys[UP_ARROW]) {
-      if (keyIsDown(CTRL) || keyIsDown(META)) {
-        v.position.z += speed;
-      } else {
-        v.position.y -= speed;
-      }
+    if (keys['_i']) {
+      v.position.z += speed;
     }
-    if (keys[DOWN_ARROW]) {
-      if (keyIsDown(CTRL) || keyIsDown(META)) {
-        v.position.z -= speed;
-      } else {
-        v.position.y += speed;
-      }
+    if (keys['_k']) {
+      v.position.z -= speed;
+    }
+    if (keys['_u']) {
+      v.position.y -= speed;
+    }
+    if (keys['_o']) {
+      v.position.y += speed;
     }
     
     coaster.updateCurves();
@@ -373,22 +381,24 @@ function processControls() {
 
 
 
-  keys['pressStart'] = false;
-  keys['pressStop'] = false;
+  keys['pressStart'] = [];
+  keys['pressStop'] = [];
 }
 
 function keyPressed() {
   // For key press checks, simply check if `key[(keycode)]` or `key[_(lowercased key)]` is true
   keys[keyCode] = true;
+  let keyLitteral = '_' + key.toString().toLowerCase();
   keys['_' + key.toString().toLowerCase()] = true;
-  keys['pressStart'] = true;
+  keys['pressStart'] = keyLitteral;
 }
 
 function keyReleased() {
   // Resets key press value if released
   keys[keyCode] = false;
-  keys['_' + key.toString().toLowerCase()] = false;
-  keys['pressStop'] = true;
+  let keyLitteral = '_' + key.toString().toLowerCase();
+  keys[keyLitteral] = false;
+  keys['pressStop'] = keyLitteral;
 }
 
 function mouseDragged() {
@@ -406,10 +416,10 @@ function mouseDragged() {
   // If dragging a selected vertex with left button, move it in camera-facing plane
   if (!hudPanel.mouseOverHUD() && _draggingVertex && mouseButton === LEFT && _draggedVertexIndex >= 0) {
     let idx = _draggedVertexIndex;
-    let isCtrl = _draggedIsControl;
+    let isCONTROL = _draggedIsControl;
     let r = getRayFromMouse();
     // plane through current vertex, normal pointing toward camera (opposite of forward)
-    let targetV = isCtrl ? coaster.controls[idx] : coaster.getVertex(idx);
+    let targetV = isCONTROL ? coaster.controls[idx] : coaster.getVertex(idx);
     if (targetV) {
       let planePoint = targetV.position.copy();
       let planeNormal = p5.Vector.mult(camera3D.getForwardVector(), -1);  // negate to point toward camera
@@ -418,7 +428,7 @@ function mouseDragged() {
         let t = p5.Vector.dot(p5.Vector.sub(planePoint, r.origin), planeNormal) / denom;
         if (t > 0) {
           let ip = p5.Vector.add(r.origin, p5.Vector.mult(r.dir, t));
-          if (isCtrl) coaster.updateControlPosition(idx, ip);
+          if (isCONTROL) coaster.updateControlPosition(idx, ip);
           else coaster.updateVertexPosition(idx, ip);
           coaster.updateCurves();
           saveSettings();
@@ -496,8 +506,9 @@ function mousePressed() {
       _draggedIsControl = closestIsControl;
     } else {
       // clicked empty space: deselect
-      selectedVertexIndex = -1;
-      selectedIsControl = false;
+      // upon testing, having the vertex remain selected is more convenient
+      // selectedVertexIndex = -1;
+      // selectedIsControl = false;
     }
   }
 }
@@ -902,29 +913,29 @@ class Camera3D {
       let horiz_movement = this.getForwardVector();
       horiz_movement.y = 0;
       horiz_movement.normalize();
-      if (keyIsDown(87)) { // W
+      if (keys[87]) { // W
         move.add(horiz_movement);
       }
-      if (keyIsDown(83)) { // S
+      if (keys[83]) { // S
         move.sub(horiz_movement);
       }
-      if (keyIsDown(65)) { // A
+      if (keys[65]) { // A
         move.sub(this.getRightVector());
       }
-      if (keyIsDown(68)) { // D
+      if (keys[68]) { // D
         move.add(this.getRightVector());
       }
-      if (keyIsDown(81)) { // Q down
+      if (keys[81]) { // Q down
         move.y -= 1; // Use 1 since it's a direction
       }
-      if (keyIsDown(69)) { // E up
+      if (keys[69]) { // E up
         move.y += 1;
       }
-      // Additional vertical controls: Space = down, Ctrl/Shift = up
-      if (keyIsDown(32)) { // SPACE
+      // Additional vertical controls: Space = down, CONTROL/Shift = up
+      if (keys[32]) { // SPACE
         move.y -= 1;
       }
-      if (keyIsDown(17) || keyIsDown(CONTROL) || keyIsDown(SHIFT)) { // CTRL
+      if (keys[17] || keys[CONTROL] || keys[SHIFT]) { // CONTROL
         move.y += 1;
       }
     }
@@ -1097,7 +1108,7 @@ class HUDPanel {
           let cv = coaster.controls[i];
           let cdiv = document.createElement('div'); cdiv.className='hud-vertex hud-control'+(i===selectedIndex && selectedIsControl?' selected':'');
           cdiv.dataset.index = i; cdiv.dataset.isControl = true;
-          cdiv.innerHTML = '<strong style="color:#fc8">Ctrl '+i+'</strong><div>X: '+cv.position.x.toFixed(1)+', Y: '+cv.position.y.toFixed(1)+', Z: '+cv.position.z.toFixed(1)+'</div>';
+          cdiv.innerHTML = '<strong style="color:#fc8">CONTROL '+i+'</strong><div>X: '+cv.position.x.toFixed(1)+', Y: '+cv.position.y.toFixed(1)+', Z: '+cv.position.z.toFixed(1)+'</div>';
           let cdel = document.createElement('button'); cdel.className='hud-btn'; cdel.innerText='Delete'; cdel.addEventListener('click', (ev)=>{ ev.stopPropagation(); if (coaster.controls[i]) coaster.controls.splice(i,1); coaster.updateCurves(); saveSettings(); if (selectedVertexIndex===i && selectedIsControl){ selectedVertexIndex=-1; selectedIsControl=false; } this.render(coaster, selectedIndex); });
           cdiv.appendChild(cdel);
           cdiv.addEventListener('click', ()=>{ selectedVertexIndex = i; selectedIsControl = true; this.syncCoordInputs(); });
