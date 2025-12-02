@@ -808,14 +808,14 @@ class Camera3D {
     this.yawVelocity = 0;
     this.pitchVelocity = 0;
     this.lookSensitivity = 0.0005;
-    this.angularFriction = 0.88;
+    this.angularFriction = 0.75;
     this.moveSpeed = 6;
-    this.flySpeed = 4;
+    this.flySpeed = 5;
     this.smooth = 0.15;
 
     this.velocity = createVector(0, 0, 0);
     this.acceleration = 0.3;
-    this.friction = 0.9;
+    this.friction = 0.75;
 
     this.targetPos = this.pos.copy();
     this.targetYaw = this.yaw;
@@ -882,7 +882,7 @@ class Camera3D {
     if (move.mag() > 0) {
       move.normalize();
       move.mult(this.acceleration);
-      this.velocity.add(move);
+      this.velocity.add(move.mult(this.flySpeed));
       // cancel snap state if user moves
       this._snapped = false;
     } else {
