@@ -30,6 +30,9 @@ let grid = {
   size: 2000
 };
 
+// Array to store currently pressed keys
+let keys = [];
+
 // Persisted settings save/load
 function saveSettings() {
   try {
@@ -288,14 +291,14 @@ function renderDebugHUD() {
 
 
 
-function keyPressed() {
-  if (key === '1') { currentViewpoint = 0; camera3D.snapToView(viewpoints[0]); }
-  if (key === '2') { currentViewpoint = 1; camera3D.snapToView(viewpoints[1]); }
-  if (key === '3') { currentViewpoint = 2; camera3D.snapToView(viewpoints[2]); }
-  if (key === '4') { currentViewpoint = 3; camera3D.snapToView(viewpoints[3]); }
+function processControls() {
+  if (keys['_1']) { currentViewpoint = 0; camera3D.snapToView(viewpoints[0]); }
+  if (keys['_2']) { currentViewpoint = 1; camera3D.snapToView(viewpoints[1]); }
+  if (keys['_3']) { currentViewpoint = 2; camera3D.snapToView(viewpoints[2]); }
+  if (keys['_4']) { currentViewpoint = 3; camera3D.snapToView(viewpoints[3]); }
   
   // Add vertex: V (avoid colliding with WASD movement)
-  if (key === 'v' || key === 'V') {
+  if (keys['_v']) {
     coaster.addVertex(createVector(random(-300, 300), random(-200, 0), random(-300, 300)));
     _hudNeedsUpdate = true;
     hudPanel.deleteClicked = false;
@@ -318,19 +321,19 @@ function keyPressed() {
       _hudNeedsUpdate = true;
     }
   }
-  if (key === 'r' || key === 'R') {
+  if (keys['_r']) {
     setup();
   }
 
   // Grid depth control: ',' = backward, '.' = forward (adjacent keys)
-  if (key === ',') {
+  if (keys['_,']) {
     grid.d -= grid.spacing;
   }
-  if (key === '.') {
+  if (keys['_.']) {
     grid.d += grid.spacing;
   }
   // Toggle grid axis with G
-  if (key === 'g' || key === 'G') {
+  if (keys['_g']) {
     grid.axis = (grid.axis + 1) % 3;
   }
   
@@ -364,6 +367,18 @@ function keyPressed() {
     
     coaster.updateCurves();
   }
+}
+
+function keyPressed() {
+  // For key press checks, simply check if `key[(keycode)]` or `key[_(lowercased key)]` is true
+  keys[keyCode] = true;
+  keys['_' + key.toString().toLowerCase()] = true;
+}
+
+function keyReleased() {
+  // Resets key press value if released
+  keys[keyCode] = false;
+  keys['_' + key.toString().toLowerCase()] = false;
 }
 
 function mouseDragged() {
@@ -945,6 +960,10 @@ class Camera3D {
     // zoom implemented as forward/back movement
     let forward = this.getForwardVector();
     this.pos.add(p5.Vector.mult(forward, delta * -0.05));
+  }
+
+  isMouseOver() {
+    
   }
 }
 
