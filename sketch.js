@@ -32,6 +32,8 @@ let grid = {
 
 // Array to store currently pressed keys
 let keys = [];
+let keysPressedDown = []; // The keys that have been immediately pressed down within the frame
+let keysPressedUp = []; // Ditto, but keys that have been released
 
 // Persisted settings save/load
 function saveSettings() {
@@ -177,11 +179,8 @@ function loadCoasterFromJSON(obj) {
   } catch (e) {}
 }
 
-let hudCanvas;
-
 function setup() {
   createCanvas(windowWidth, windowHeight, WEBGL);
-  hudCanvas = createGraphics(windowWidth, windowHeight);
   
   // Initialize coaster system
   coaster = new Coaster();
@@ -239,25 +238,12 @@ function draw() {
     hudPanel.syncCoordInputs();
   }
 
-  // Update DOM debug panel and draw debug circles
+  // Update DOM debug panel
   renderDebugHUD();
-  
-  // Draw debug overlay in screen space
-  push();
-  camera(0, 0, (height/2) / tan(PI/6), 0, 0, 0, 0, 1, 0);
-  translate(0, 0, 0);
-  texture(hudCanvas);
-  noStroke();
-  plane(width, height);
-  pop();
 
 }
 
 function renderDebugHUD() {
-  // Clear and draw debug circles on hudCanvas
-  hudCanvas.clear();
-  hudCanvas.noStroke();
-  
   // output debug information into the #debug DOM element
   try {
     let dbg = document.getElementById('debug');
@@ -293,10 +279,6 @@ function renderDebugHUD() {
       let distp = dist(mouseX, mouseY, sp.x, sp.y);
       let isHit = distp <= r;
       
-      // Draw debug circle
-      hudCanvas.fill(isHit ? color(0, 255, 0, 100) : color(255, 0, 0, 100));
-      hudCanvas.ellipse(sp.x, sp.y, r * 2, r * 2);
-      
       lines.push('<div style="' + (isHit ? 'color:#0f0' : 'color:#999') + '"><strong>V' + i + ':</strong> scr(' + nf(sp.x,1,0) + ',' + nf(sp.y,1,0) + ') r=' + nf(r,1,1) + ' d=' + nf(distp,1,1) + (isHit ? ' ✓HIT' : '') + '</div>');
     }
     for (let i = 0; i < (coaster.controls ? coaster.controls.length : 0); i++) {
@@ -306,10 +288,6 @@ function renderDebugHUD() {
       let r = max(6, screenRadiusForWorldSize(cv.position, 8));
       let distp = dist(mouseX, mouseY, sp.x, sp.y);
       let isHit = distp <= r;
-      
-      // Draw debug circle for control
-      hudCanvas.fill(isHit ? color(0, 255, 255, 100) : color(255, 255, 0, 100));
-      hudCanvas.ellipse(sp.x, sp.y, r * 2, r * 2);
       
       lines.push('<div style="' + (isHit ? 'color:#0f0' : 'color:#999') + '"><strong>C' + i + ':</strong> scr(' + nf(sp.x,1,0) + ',' + nf(sp.y,1,0) + ') r=' + nf(r,1,1) + ' d=' + nf(distp,1,1) + (isHit ? ' ✓HIT' : '') + '</div>');
     }
@@ -355,15 +333,15 @@ function processControls() {
     setup();
   }
 
-  // Grid depth control: ',' = backward, '.' = forward (adjacent keys)
-  if (keys['_,']) {
+  // Grid depth control: '[' = backward, ']' = forward
+  if (keys['_[']) {
     grid.d -= grid.spacing;
   }
-  if (keys['_.']) {
+  if (keys['_]']) {
     grid.d += grid.spacing;
   }
-  // Toggle grid axis with G
-  if (keys['_g']) {
+  // Toggle grid axis with P
+  if (keysPressedDown['_p']) {
     grid.axis = (grid.axis + 1) % 3;
   }
   
@@ -397,25 +375,24 @@ function processControls() {
   }
 
 
-
-  keys['pressStart'] = [];
-  keys['pressStop'] = [];
+  // Reset the list of keys which have been immediately pressed
+  keysPressedDown = [];
 }
 
 function keyPressed() {
   // For key press checks, simply check if `key[(keycode)]` or `key[_(lowercased key)]` is true
-  keys[keyCode] = true;
   let keyLitteral = '_' + key.toString().toLowerCase();
-  keys['_' + key.toString().toLowerCase()] = true;
-  keys['pressStart'] = keyLitteral;
+  keys[keyCode] = true;
+  keys[keyLitteral] = true;
+  keysPressedDown[keyCode] = true;
+  keysPressedDown[keyLitteral] = true;
 }
 
 function keyReleased() {
   // Resets key press value if released
-  keys[keyCode] = false;
   let keyLitteral = '_' + key.toString().toLowerCase();
+  keys[keyCode] = false;
   keys[keyLitteral] = false;
-  keys['pressStop'] = keyLitteral;
 }
 
 function mouseDragged() {
@@ -430,26 +407,22 @@ function mouseDragged() {
   }
 
 
-  // If dragging a selected vertex with left button, move it in camera-facing plane
+  // If dragging a selected vertex with left button, move it to grid plane intersection
   if (!hudPanel.mouseOverHUD() && _draggingVertex && mouseButton === LEFT && _draggedVertexIndex >= 0) {
     let idx = _draggedVertexIndex;
     let isCONTROL = _draggedIsControl;
     let r = getRayFromMouse();
-    // plane through current vertex, normal pointing toward camera (opposite of forward)
-    let targetV = isCONTROL ? coaster.controls[idx] : coaster.getVertex(idx);
-    if (targetV) {
-      let planePoint = targetV.position.copy();
-      let planeNormal = p5.Vector.mult(camera3D.getForwardVector(), -1);  // negate to point toward camera
-      let denom = p5.Vector.dot(r.dir, planeNormal);
-      if (abs(denom) > 1e-6) {
-        let t = p5.Vector.dot(p5.Vector.sub(planePoint, r.origin), planeNormal) / denom;
-        if (t > 0) {
-          let ip = p5.Vector.add(r.origin, p5.Vector.mult(r.dir, t));
-          if (isCONTROL) coaster.updateControlPosition(idx, ip);
-          else coaster.updateVertexPosition(idx, ip);
-          coaster.updateCurves();
-          saveSettings();
-        }
+    let gridPlane = getGridPlane();
+    
+    let denom = p5.Vector.dot(r.dir, gridPlane.normal);
+    if (abs(denom) > 1e-6) {
+      let t = p5.Vector.dot(p5.Vector.sub(gridPlane.point, r.origin), gridPlane.normal) / denom;
+      if (t > 0) {
+        let ip = p5.Vector.add(r.origin, p5.Vector.mult(r.dir, t));
+        if (isCONTROL) coaster.updateControlPosition(idx, ip);
+        else coaster.updateVertexPosition(idx, ip);
+        coaster.updateCurves();
+        saveSettings();
       }
     }
   }
@@ -563,7 +536,7 @@ function worldToScreen(pos) {
   
   return {
     x: (x * f / (z * aspect)) * (width / 2) + width / 2,
-    y: -(y * f / z) * (height / 2) + height / 2,
+    y: (y * f / z) * (height / 2) + height / 2,
     z: z
   };
 }
@@ -578,7 +551,7 @@ function getRayFromMouse() {
   let up = p5.Vector.cross(right, forward);
   
   let ndcX = (mouseX / width) * 2 - 1;
-  let ndcY = -((mouseY / height) * 2 - 1);
+  let ndcY = ((mouseY / height) * 2 - 1);
   
   let camX = ndcX / (f / aspect);
   let camY = ndcY / f;
@@ -660,6 +633,20 @@ function drawGrid() {
       line(-half, grid.d, z, half, grid.d, z);
     }
   }
+  
+  // Draw origin marker
+  push();
+  stroke(255, 100, 100);
+  strokeWeight(3);
+  if (grid.axis === 0) {
+    point(0, 0, grid.d);
+  } else if (grid.axis === 1) {
+    point(grid.d, 0, 0);
+  } else {
+    point(0, grid.d, 0);
+  }
+  pop();
+  
   pop();
 }
 
@@ -684,19 +671,23 @@ class Vertex {
   render(size = 15) {
     push();
     translate(this.position.x, this.position.y, this.position.z);
-    // Glow behind selected vertex for visual emphasis
-    if (this.selected) {
+    
+    // Hover glow
+    /*if (this.hovered && !this.selected) {
       push();
       noStroke();
-      fill(255, 215, 0, 70);
-      sphere(size * 2.2);
+      fill(255, 215, 0, 50);
+      sphere(size * 1.8);
       pop();
-    }
+    }*/
 
-    // Only draw stroke for selected vertices (golden outline)
+    // Selection outline
     if (this.selected) {
-      stroke(255, 215, 0);
-      strokeWeight(2);
+      stroke(255, 0, 255, 120);
+      strokeWeight(1);
+    } else if (this.hovered) {
+      stroke(255, 0, 255, 80);
+      strokeWeight(0.5);
     } else {
       noStroke();
     }
@@ -707,7 +698,7 @@ class Vertex {
       fill(100, 200, 255);
     }
 
-    let drawSize = this.selected ? size * 1.4 : size;
+    let drawSize = size;//this.selected ? size * 1.4 : size;
     sphere(drawSize);
     pop();
   }
@@ -845,17 +836,49 @@ class Coaster {
   // curve type selection removed; all segments use Beziers
   
   render() {
+    // Check hover states
+    let hoveredIndex = -1;
+    let hoveredIsControl = false;
+    
+    for (let i = 0; i < this.vertices.length; i++) {
+      let v = this.vertices[i];
+      let sp = worldToScreen(v.position);
+      let r = max(8, screenRadiusForWorldSize(v.position, 15));
+      let distp = dist(mouseX, mouseY, sp.x, sp.y);
+      if (distp <= r) {
+        hoveredIndex = i;
+        hoveredIsControl = false;
+      }
+    }
+    
+    for (let i = 0; i < (this.controls ? this.controls.length : 0); i++) {
+      let cv = this.controls[i];
+      if (!cv) continue;
+      let sp = worldToScreen(cv.position);
+      let r = max(8, screenRadiusForWorldSize(cv.position, 12));
+      let distp = dist(mouseX, mouseY, sp.x, sp.y);
+      if (distp <= r) {
+        hoveredIndex = i;
+        hoveredIsControl = true;
+      }
+    }
+    
     for (let i = 0; i < this.vertices.length; i++) {
       let v = this.vertices[i];
       v.selected = (!selectedIsControl && i === selectedVertexIndex);
+      v.hovered = (!hoveredIsControl && i === hoveredIndex);
       v.render();
     }
-    // mark control vertex selection state
+    
     if (this.controls) {
       for (let i = 0; i < this.controls.length; i++) {
-        if (this.controls[i]) this.controls[i].selected = (selectedIsControl && i === selectedVertexIndex);
+        if (this.controls[i]) {
+          this.controls[i].selected = (selectedIsControl && i === selectedVertexIndex);
+          this.controls[i].hovered = (hoveredIsControl && i === hoveredIndex);
+        }
       }
     }
+    
     for (let c of this.curves) {
       c.render();
     }
