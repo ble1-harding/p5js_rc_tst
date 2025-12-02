@@ -69,7 +69,10 @@ canvas {
   background: rgba(255,255,255,0.03);
   border-radius: 4px;
   font-size: 12px;
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .hud-vertex.hud-control {
@@ -84,14 +87,19 @@ canvas {
 }
 
 .hud-vertex strong {
-  display: block;
   color: #dff;
 }
 
 .hud-vertex .hud-btn {
-  display: block;
-  margin-top: 8px;
-  clear: both;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 10px;
+}
+
+.hud-vertex-content {
+  flex: 1;
 }
 
 .hud-btn {

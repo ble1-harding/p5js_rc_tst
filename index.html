@@ -14,7 +14,11 @@
 
   <body>
     <div id="info" class="prevent-select">
-      <h2>Rollercoaster Modeler</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0;">Rollercoaster Modeler</h2>
+        <button id="info-hide" style="background: #933; color: #fff; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 11px;">−</button>
+      </div>
+      <div id="info-content">
       <p><strong>Controls:</strong></p>
       <ul>
         <li><strong>Left-drag:</strong> Look around (mouse / trackpad)</li>
@@ -36,14 +40,24 @@
         <li>
           <strong>U/O:</strong> Move selected vertex up/down
         </li>
-        <li><strong>Shift+Arrows:</strong> Move faster</li>
+        <li><strong>[ / ]:</strong> Move grid plane back/forward</li>
+        <li><strong>P:</strong> Cycle grid axis (XY/YZ/XZ)</li>
         <li><strong>R:</strong> Reset scene</li>
       </ul>
       <p>
         Click vertices to select them. Edit coordinates in the HUD panel on the
         left.
       </p>
+      </div>
     </div>
+    <script>
+      let infoHidden = false;
+      document.getElementById('info-hide').addEventListener('click', () => {
+        infoHidden = !infoHidden;
+        document.getElementById('info-content').style.display = infoHidden ? 'none' : 'block';
+        document.getElementById('info-hide').innerText = infoHidden ? '+' : '−';
+      });
+    </script>
       <div id="hud"></div>
       <div id="debug"></div>
     <script src="sketch.js"></script>

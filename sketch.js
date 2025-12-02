@@ -652,7 +652,11 @@ function drawGrid() {
 
 function mouseWheel(event) {
   if (!hudPanel.mouseOverHUD()) {
-    camera3D.zoom(event.delta);
+    let delta = event.delta * 5;
+    let deltaThreshold = 50
+    if (delta > deltaThreshold || delta < -deltaThreshold) {
+      camera3D.zoom(delta);
+    }
   }
 }
 
@@ -1072,8 +1076,11 @@ class HUDPanel {
     this._lastVertexCount = -1;
     this.container = document.getElementById('hud') || (function(){ let d=document.createElement('div'); d.id='hud'; document.body.appendChild(d); return d; })();
     // create structural elements
-    this.title = document.createElement('h3'); this.title.innerText = 'VERTICES';
+    this.titleRow = document.createElement('div'); this.titleRow.style.display = 'flex'; this.titleRow.style.justifyContent = 'space-between'; this.titleRow.style.alignItems = 'center';
+    this.title = document.createElement('h3'); this.title.innerText = 'VERTICES'; this.title.style.margin = '0';
+    this.hideButton = document.createElement('button'); this.hideButton.innerText = '−'; this.hideButton.className = 'hud-btn'; this.hideButton.style.width = '20px'; this.hideButton.style.height = '20px'; this.hideButton.style.padding = '0';
     this.vertexList = document.createElement('div');
+    this.isHidden = false;
     this.controlsRow = document.createElement('div');
     this.dragLabel = document.createElement('span');
     this.dragMinus = document.createElement('button'); this.dragMinus.innerText='-';
@@ -1091,7 +1098,9 @@ class HUDPanel {
     this.applyButton = document.createElement('button'); this.applyButton.innerText='Apply';
 
     // assemble
-    this.container.appendChild(this.title);
+    this.titleRow.appendChild(this.title);
+    this.titleRow.appendChild(this.hideButton);
+    this.container.appendChild(this.titleRow);
     this.container.appendChild(this.vertexList);
     this.controlsRow.appendChild(this.dragMinus); this.controlsRow.appendChild(this.dragLabel); this.controlsRow.appendChild(this.dragPlus);
     this.controlsRow.appendChild(document.createElement('br'));
@@ -1114,6 +1123,7 @@ class HUDPanel {
     this.dragMinus.addEventListener('click', ()=>{ dragThreshold = max(1, dragThreshold-1); saveSettings(); this.updateDragLabel(); });
     this.dragPlus.addEventListener('click', ()=>{ dragThreshold = dragThreshold+1; saveSettings(); this.updateDragLabel(); });
     this.applyButton.addEventListener('click', ()=>{ if (selectedVertexIndex>=0){ let vx=parseFloat(this.xInput.value); let vy=parseFloat(this.yInput.value); let vz=parseFloat(this.zInput.value); if (!isNaN(vx)&&!isNaN(vy)&&!isNaN(vz)){ if (selectedIsControl) coaster.updateControlPosition(selectedVertexIndex, createVector(vx,vy,vz)); else coaster.updateVertexPosition(selectedVertexIndex, createVector(vx,vy,vz)); coaster.updateCurves(); saveSettings(); } } });
+    this.hideButton.addEventListener('click', ()=>{ this.isHidden = !this.isHidden; this.vertexList.style.display = this.isHidden ? 'none' : 'block'; this.controlsRow.style.display = this.isHidden ? 'none' : 'block'; this.coordRow.style.display = this.isHidden ? 'none' : 'block'; this.hideButton.innerText = this.isHidden ? '+' : '−'; });
   }
 
   updateDragLabel() { this.dragLabel.innerText = ' Drag threshold: ' + dragThreshold + ' '; }
@@ -1135,8 +1145,9 @@ class HUDPanel {
         let v = coaster.getVertex(i);
         let div = document.createElement('div'); div.className='hud-vertex'+(i===selectedIndex && !selectedIsControl?' selected':'');
         div.dataset.index = i; div.dataset.isControl = false;
-        div.innerHTML = '<strong>Vertex '+i+'</strong><div style="margin-top: 5px;">X: '+v.position.x.toFixed(1)+', Y: '+v.position.y.toFixed(1)+', Z: '+v.position.z.toFixed(1)+'</div>';
-        let del = document.createElement('button'); del.className='hud-btn'; del.innerText='Delete'; del.style.marginTop = '5px'; del.addEventListener('click', (ev)=>{ ev.stopPropagation(); coaster.deleteVertex(i); if (selectedVertexIndex===i){ selectedVertexIndex=-1; selectedIsControl=false; } this.render(coaster, selectedIndex); });
+        let del = document.createElement('button'); del.className='hud-btn'; del.innerText='×'; del.addEventListener('click', (ev)=>{ ev.stopPropagation(); coaster.deleteVertex(i); if (selectedVertexIndex===i){ selectedVertexIndex=-1; selectedIsControl=false; } this.render(coaster, selectedIndex); });
+        let content = document.createElement('div'); content.className='hud-vertex-content'; content.innerHTML = '<strong>Vertex '+i+'</strong><div>X: '+v.position.x.toFixed(1)+', Y: '+v.position.y.toFixed(1)+', Z: '+v.position.z.toFixed(1)+'</div>';
+        div.appendChild(content);
         div.appendChild(del);
         div.addEventListener('click', ()=>{ selectedVertexIndex = i; selectedIsControl = false; this.syncCoordInputs(); });
         div.addEventListener('mouseenter', ()=>{ div.style.backgroundColor = '#444'; });
@@ -1148,7 +1159,8 @@ class HUDPanel {
           let cv = coaster.controls[i];
           let cdiv = document.createElement('div'); cdiv.className='hud-vertex hud-control'+(i===selectedIndex && selectedIsControl?' selected':'');
           cdiv.dataset.index = i; cdiv.dataset.isControl = true;
-          cdiv.innerHTML = '<strong style="color:#fc8">CONTROL '+i+'</strong><div style="margin-top: 5px;">X: '+cv.position.x.toFixed(1)+', Y: '+cv.position.y.toFixed(1)+', Z: '+cv.position.z.toFixed(1)+'</div>';
+          let ccontent = document.createElement('div'); ccontent.className='hud-vertex-content'; ccontent.innerHTML = '<strong style="color:#fc8">CONTROL '+i+'</strong><div>X: '+cv.position.x.toFixed(1)+', Y: '+cv.position.y.toFixed(1)+', Z: '+cv.position.z.toFixed(1)+'</div>';
+          cdiv.appendChild(ccontent);
           cdiv.addEventListener('click', ()=>{ selectedVertexIndex = i; selectedIsControl = true; this.syncCoordInputs(); });
           cdiv.addEventListener('mouseenter', ()=>{ cdiv.style.backgroundColor = '#444'; });
           cdiv.addEventListener('mouseleave', ()=>{ cdiv.style.backgroundColor = ''; });
