@@ -177,11 +177,11 @@ function loadCoasterFromJSON(obj) {
   } catch (e) {}
 }
 
-let hud;
+let hudCanvas;
 
 function setup() {
   createCanvas(windowWidth, windowHeight, WEBGL);
-  hud = createGraphics(width, height);
+  hudCanvas = createGraphics(windowWidth, windowHeight);
   
   // Initialize coaster system
   coaster = new Coaster();
@@ -239,14 +239,25 @@ function draw() {
     hudPanel.syncCoordInputs();
   }
 
-  // Update DOM debug panel
+  // Update DOM debug panel and draw debug circles
   renderDebugHUD();
-
-  texture(hud);
+  
+  // Draw debug overlay in screen space
+  push();
+  camera(0, 0, (height/2) / tan(PI/6), 0, 0, 0, 0, 1, 0);
+  translate(0, 0, 0);
+  texture(hudCanvas);
+  noStroke();
+  plane(width, height);
+  pop();
 
 }
 
 function renderDebugHUD() {
+  // Clear and draw debug circles on hudCanvas
+  hudCanvas.clear();
+  hudCanvas.noStroke();
+  
   // output debug information into the #debug DOM element
   try {
     let dbg = document.getElementById('debug');
@@ -281,6 +292,11 @@ function renderDebugHUD() {
       let r = max(8, screenRadiusForWorldSize(v.position, 15));
       let distp = dist(mouseX, mouseY, sp.x, sp.y);
       let isHit = distp <= r;
+      
+      // Draw debug circle
+      hudCanvas.fill(isHit ? color(0, 255, 0, 100) : color(255, 0, 0, 100));
+      hudCanvas.ellipse(sp.x, sp.y, r * 2, r * 2);
+      
       lines.push('<div style="' + (isHit ? 'color:#0f0' : 'color:#999') + '"><strong>V' + i + ':</strong> scr(' + nf(sp.x,1,0) + ',' + nf(sp.y,1,0) + ') r=' + nf(r,1,1) + ' d=' + nf(distp,1,1) + (isHit ? ' ✓HIT' : '') + '</div>');
     }
     for (let i = 0; i < (coaster.controls ? coaster.controls.length : 0); i++) {
@@ -290,6 +306,11 @@ function renderDebugHUD() {
       let r = max(6, screenRadiusForWorldSize(cv.position, 8));
       let distp = dist(mouseX, mouseY, sp.x, sp.y);
       let isHit = distp <= r;
+      
+      // Draw debug circle for control
+      hudCanvas.fill(isHit ? color(0, 255, 255, 100) : color(255, 255, 0, 100));
+      hudCanvas.ellipse(sp.x, sp.y, r * 2, r * 2);
+      
       lines.push('<div style="' + (isHit ? 'color:#0f0' : 'color:#999') + '"><strong>C' + i + ':</strong> scr(' + nf(sp.x,1,0) + ',' + nf(sp.y,1,0) + ') r=' + nf(r,1,1) + ' d=' + nf(distp,1,1) + (isHit ? ' ✓HIT' : '') + '</div>');
     }
     
@@ -535,28 +556,32 @@ function worldToScreen(pos) {
   
   if (z <= 0.1) return { x: -9999, y: -9999, z: z };
   
-  let fov = PI / 3;
+  // Match p5.js default perspective: fovy = PI/3, aspect = width/height
+  let fovy = PI / 3;
   let aspect = width / height;
-  let f = height / (2 * tan(fov / 2));
+  let f = 1 / tan(fovy / 2);
   
   return {
-    x: (x * f / (z * aspect)) + width / 2,
-    y: (y * f / z) + height / 2,
+    x: (x * f / (z * aspect)) * (width / 2) + width / 2,
+    y: -(y * f / z) * (height / 2) + height / 2,
     z: z
   };
 }
 
 function getRayFromMouse() {
-  let fov = PI / 3;
+  let fovy = PI / 3;
   let aspect = width / height;
-  let f = height / (2 * tan(fov / 2));
+  let f = 1 / tan(fovy / 2);
   
   let forward = camera3D.getForwardVector();
   let right = camera3D.getRightVector();
   let up = p5.Vector.cross(right, forward);
   
-  let camX = (mouseX - width / 2) * aspect / f;
-  let camY = (mouseY - height / 2) / f;
+  let ndcX = (mouseX / width) * 2 - 1;
+  let ndcY = -((mouseY / height) * 2 - 1);
+  
+  let camX = ndcX / (f / aspect);
+  let camY = ndcY / f;
   
   let dir = p5.Vector.add(
     p5.Vector.add(
