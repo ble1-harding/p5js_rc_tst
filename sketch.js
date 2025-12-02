@@ -529,19 +529,20 @@ function getRayFromMouse() {
 function worldToCameraSpace(pos) {
   // transform world point into camera-local coordinates
   let rel = p5.Vector.sub(pos, camera3D.pos);
-  // inverse rotate by yaw then pitch (apply -yaw, -pitch)
-  let yaw = -camera3D.yaw;
+  // The camera applies pitch (X) then yaw (Y) to camera-space points to get world-space.
+  // To convert world->camera we must apply the inverse in reverse order: first inverse pitch, then inverse yaw.
   let pitch = -camera3D.pitch;
-  // rotate around Y (yaw)
-  let cosy = cos(yaw), siny = sin(yaw);
-  let x1 = cosy * rel.x + siny * rel.z;
-  let z1 = -siny * rel.x + cosy * rel.z;
-  let y1 = rel.y;
-  // rotate around X (pitch)
+  let yaw = -camera3D.yaw;
+  // rotate around X by -pitch (inverse of pitch)
   let cosp = cos(pitch), sinp = sin(pitch);
-  let y2 = cosp * y1 - sinp * z1;
-  let z2 = sinp * y1 + cosp * z1;
-  return createVector(x1, y2, z2);
+  let x0 = rel.x;
+  let y0 = cosp * rel.y - sinp * rel.z;
+  let z0 = sinp * rel.y + cosp * rel.z;
+  // then rotate around Y by -yaw
+  let cosy = cos(yaw), siny = sin(yaw);
+  let x1 = cosy * x0 + siny * z0;
+  let z1 = -siny * x0 + cosy * z0;
+  return createVector(x1, y0, z1);
 }
 
 function worldToScreen(pos) {
@@ -552,6 +553,11 @@ function worldToScreen(pos) {
   let scale = (height / 2) / tan(fov / 2);
   // camera looks down -Z in camera space; so use -z for projection
   let z = -camSpace.z;
+  // If point is behind the camera (z <= 0), return off-screen coords to avoid
+  // accidental picking or inverted projection.
+  if (z <= 0) {
+    return { x: -1e9, y: -1e9, z: z };
+  }
   if (abs(z) < 1e-6) z = 1e-6;
   let sx = (width / 2) + (camSpace.x * scale) / z;
   let sy = (height / 2) + (camSpace.y * scale) / z;
@@ -561,6 +567,7 @@ function worldToScreen(pos) {
 function screenRadiusForWorldSize(pos, worldRadius) {
   // approximate the screen-space radius of a sphere of worldRadius at pos
   let center = worldToScreen(pos);
+  if (center.z <= 0) return 0;
   // offset a point to the right by worldRadius in world space (approx using camera right vector)
   // get a small world-space offset in camera right direction
   let forward = camera3D.getForwardVector();
