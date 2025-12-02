@@ -2,11 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <title>Rollercoaster Modeling Program</title>
 
-    <link rel="stylesheet" type="text/css" href="style.css">
+    <link rel="stylesheet" type="text/css" href="style.css" />
 
     <script src="libraries/p5.min.js"></script>
     <script src="libraries/p5.sound.min.js"></script>
@@ -17,18 +17,40 @@
       <h2>Rollercoaster Modeler</h2>
       <p><strong>Controls:</strong></p>
       <ul>
-        <li><strong>Mouse Drag:</strong> Rotate view</li>
+        <li><strong>Left-drag:</strong> Look around (mouse / trackpad)</li>
+        <li><strong>Middle-drag:</strong> Pan camera</li>
         <li><strong>Mouse Wheel:</strong> Zoom</li>
-        <li><strong>1-4:</strong> Snap to viewpoint (Front, Top, Side, Isometric)</li>
-        <li><strong>A:</strong> Add vertex at random position</li>
-        <li><strong>D:</strong> Delete selected vertex</li>
+        <li><strong>WASD:</strong> Move forward/left/back/right</li>
+        <li>
+          <strong>Q/E or Ctrl/Space:</strong> Move down/up (Ctrl = Up, Space =
+          Down)
+        </li>
+        <li>
+          <strong>1-4:</strong> Snap to viewpoint (Front, Top, Side, Isometric)
+        </li>
+        <li><strong>V:</strong> Add vertex at random position</li>
+        <li><strong>Del / Backspace:</strong> Delete selected vertex</li>
         <li><strong>C:</strong> Cycle curve types</li>
-        <li><strong>Arrows:</strong> Move selected vertex (Ctrl/Cmd for Z-axis)</li>
+        <li>
+          <strong>Arrows:</strong> Move selected vertex (Ctrl/Cmd for Z-axis)
+        </li>
         <li><strong>Shift+Arrows:</strong> Move faster</li>
         <li><strong>R:</strong> Reset scene</li>
       </ul>
-      <p>Click vertices to select them. Edit coordinates in the HUD panel on the left.</p>
+      <p>
+        Click vertices to select them. Edit coordinates in the HUD panel on the
+        left.
+      </p>
     </div>
+      <div id="hud"></div>
+      <div id="debug"></div>
     <script src="sketch.js"></script>
+    <script>
+      document.addEventListener("keydown", function (event) {
+        if (event.ctrlKey) {
+          event.preventDefault();
+        }
+      });
+    </script>
   </body>
 </html>
