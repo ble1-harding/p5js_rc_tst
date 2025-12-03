@@ -2,7 +2,7 @@
 // 3D vertex-based track design with curve templates and HUD manipulation
 // Mon 1 Dec 2025
 // ble
-// made with microsoft copilot
+// made with microsoft copilot (Chat GPT mini) and Amazon Q (Claude Sonnet 4)
 
 let coaster;
 let hudPanel;
@@ -187,6 +187,10 @@ function setup() {
   
   // Set up p5-gizmo camera reference
   cam = camera3D;
+  
+  // Test gizmo detection
+  console.log('Camera setup:', cam.eyeX, cam.eyeY, cam.eyeZ);
+  console.log('Gizmos created:', vertexGizmos.length);
 
   // Load persisted settings (drag threshold, curve type, camera)
   let hadCamera = loadSettings();
@@ -307,7 +311,7 @@ function renderDebugHUD() {
 
 
 function processControls() {
-  if (keys['_1']) { console.log(true);currentViewpoint = 0; camera3D.snapToView(viewpoints[0]); }
+  if (keys['_1']) { currentViewpoint = 0; camera3D.snapToView(viewpoints[0]); }
   if (keys['_2']) { currentViewpoint = 1; camera3D.snapToView(viewpoints[1]); }
   if (keys['_3']) { currentViewpoint = 2; camera3D.snapToView(viewpoints[2]); }
   if (keys['_4']) { currentViewpoint = 3; camera3D.snapToView(viewpoints[3]); }
@@ -375,6 +379,7 @@ function processControls() {
 
   // Reset the list of keys which have been immediately pressed
   keysPressedDown = [];
+  keysPressedUp = [];
 }
 
 function keyPressed() {
@@ -391,6 +396,8 @@ function keyReleased() {
   let keyLitteral = '_' + key.toString().toLowerCase();
   keys[keyCode] = false;
   keys[keyLitteral] = false;
+  keysPressedUp[keyCode] = true;
+  keysPressedUp[keyLitteral] = true;
 }
 
 function mouseDragged() {
@@ -421,9 +428,13 @@ function mouseDragged() {
 }
 
 function mousePressed() {
-  // Only update gizmos if they're being hovered
-  for (let gizmo of vertexGizmos) {
+  // Debug gizmo hover states
+  console.log('Mouse pressed at:', mouseX, mouseY);
+  for (let i = 0; i < vertexGizmos.length; i++) {
+    let gizmo = vertexGizmos[i];
+    console.log(`Gizmo ${i} hover:`, gizmo.hover, 'pos:', gizmo.pos);
     if (gizmo.hover) {
+      console.log(`Updating gizmo ${i}`);
       gizmo.update();
     }
   }
@@ -471,16 +482,7 @@ function worldToScreen(pos) {
 
 
 
-function screenRadiusForWorldSize(pos, worldRadius) {
-  // approximate the screen-space radius of a sphere of worldRadius at pos
-  let center = worldToScreen(pos);
-  if (center.z <= 0) return 0;
-  // offset a point to the right by worldRadius in world space
-  let right = camera3D.getRightVector();
-  let offsetPoint = p5.Vector.add(pos, p5.Vector.mult(right, worldRadius));
-  let off = worldToScreen(offsetPoint);
-  return dist(center.x, center.y, off.x, off.y);
-}
+
 
 function screenCoord(pos) {
   // Legacy; use worldToScreen instead for accurate projection
@@ -580,35 +582,20 @@ class Vertex {
   constructor(pos, isControl = false) {
     this.position = pos.copy();
     this.isControl = isControl;
-    this.selected = false;
   }
   
   render(size = 15) {
     push();
     translate(this.position.x, this.position.y, this.position.z);
     
-    // Selection outline
-    if (this.selected) {
-      stroke(255, 0, 255, 120);
-      strokeWeight(1);
-    } else if (this.hovered) {
-      stroke(255, 0, 255, 80);
-      strokeWeight(0.5);
-    } else {
-      noStroke();
-    }
-
+    noStroke();
     if (this.isControl) {
       fill(255, 200, 100);
     } else {
       fill(100, 200, 255);
     }
 
-    let drawSize = size;
-    sphere(drawSize);
-    
-  
-    
+    sphere(size);
     pop();
   }
   
@@ -763,108 +750,34 @@ class Coaster {
   // curve type selection removed; all segments use Beziers
   
   render() {
-    // Check hover states
-    let hoveredIndex = -1;
-    let hoveredIsControl = false;
-    
-    for (let i = 0; i < this.vertices.length; i++) {
-      let v = this.vertices[i];
-      let sp = worldToScreen(v.position);
-      let r = max(8, screenRadiusForWorldSize(v.position, 15));
-      let distp = dist(mouseX, mouseY, sp.x, sp.y);
-      if (distp <= r) {
-        hoveredIndex = i;
-        hoveredIsControl = false;
-      }
-    }
-    
-    for (let i = 0; i < (this.controls ? this.controls.length : 0); i++) {
-      let cv = this.controls[i];
-      if (!cv) continue;
-      let sp = worldToScreen(cv.position);
-      let r = max(8, screenRadiusForWorldSize(cv.position, 12));
-      let distp = dist(mouseX, mouseY, sp.x, sp.y);
-      if (distp <= r) {
-        hoveredIndex = i;
-        hoveredIsControl = true;
-      }
-    }
-    
-
-    
-    // Update HUD highlighting
-    this.updateHUDHighlighting(hoveredIndex, hoveredIsControl);
-    
-    for (let i = 0; i < this.vertices.length; i++) {
-      let v = this.vertices[i];
-      v.selected = (!selectedIsControl && i === selectedVertexIndex);
-      v.hovered = (!hoveredIsControl && i === hoveredIndex);
+    // Render vertices
+    for (let v of this.vertices) {
       v.render();
     }
     
+    // Render controls
     if (this.controls) {
-      for (let i = 0; i < this.controls.length; i++) {
-        if (this.controls[i]) {
-          this.controls[i].selected = (selectedIsControl && i === selectedVertexIndex);
-          this.controls[i].hovered = (hoveredIsControl && i === hoveredIndex);
-        }
+      for (let control of this.controls) {
+        if (control) control.render(8);
       }
     }
     
+    // Render curves
     for (let c of this.curves) {
       c.render();
     }
     
     // Render all gizmos with proper materials
     push();
-    // Reset any material settings that might interfere
     fill(255);
     noStroke();
     for (let gizmo of vertexGizmos) {
       gizmo.show();
     }
     pop();
-    
-
-    
-
   }
   
-  updateHUDHighlighting(hoveredIndex, hoveredIsControl) {
-    // Clear all HUD highlights first
-    let hudVertices = document.querySelectorAll('.hud-vertex');
-    hudVertices.forEach(el => {
-      if (!el.classList.contains('selected')) {
-        el.style.backgroundColor = '';
-        el.style.border = '';
-      }
-    });
-    
-    // Add hover highlight to HUD
-    if (hoveredIndex >= 0) {
-      let selector = `.hud-vertex[data-index="${hoveredIndex}"][data-is-control="${hoveredIsControl}"]`;
-      let hudElement = document.querySelector(selector);
-      if (hudElement && !hudElement.classList.contains('selected')) {
-        if (hoveredIsControl) {
-          hudElement.style.backgroundColor = 'rgba(255, 200, 100, 0.05)';
-          hudElement.style.border = '1px solid rgba(255, 200, 100, 0.15)';
-        } else {
-          hudElement.style.backgroundColor = 'rgba(100, 200, 255, 0.05)';
-          hudElement.style.border = '1px solid rgba(100, 200, 255, 0.15)';
-        }
-      }
-    }
-    
-    // Add selection highlight to HUD
-    if (selectedVertexIndex >= 0) {
-      let selector = `.hud-vertex[data-index="${selectedVertexIndex}"][data-is-control="${selectedIsControl}"]`;
-      let hudElement = document.querySelector(selector);
-      if (hudElement) {
-        hudElement.style.backgroundColor = 'rgba(255, 0, 255, 0.08)';
-        hudElement.style.border = '1px solid rgba(255, 0, 255, 0.2)';
-      }
-    }
-  }
+
   
   getVertexCount() {
     return this.vertices.length;
@@ -939,22 +852,22 @@ class Camera3D {
       let horiz_movement = this.getForwardVector();
       horiz_movement.y = 0;
       horiz_movement.normalize();
-      if (keys[87]) { // W
+      if (keys['_w']) { // W
         move.add(horiz_movement);
       }
-      if (keys[83]) { // S
+      if (keys['_s']) { // S
         move.sub(horiz_movement);
       }
-      if (keys[65]) { // A
+      if (keys['_a']) { // A
         move.sub(this.getRightVector());
       }
-      if (keys[68]) { // D
+      if (keys['_d']) { // D
         move.add(this.getRightVector());
       }
-      if (keys[81]) { // Q down
+      if (keys['_q']) { // Q down
         move.y -= 1; // Use 1 since it's a direction
       }
-      if (keys[69]) { // E up
+      if (keys['_e']) { // E up
         move.y += 1;
       }
       // Additional vertical controls: Space = down, CONTROL/Shift = up
