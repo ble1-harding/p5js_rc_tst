@@ -185,8 +185,9 @@ function setup() {
   hudPanel = new HUDPanel();
   camera3D = new Camera3D();
   
-  // Set up p5-gizmo camera reference
-  cam = camera3D;
+  // Set up p5-gizmo camera reference - use p5's built-in camera
+  cam = createCamera();
+  cam.setPosition(camera3D.pos.x, camera3D.pos.y, camera3D.pos.z);
   
   // Test gizmo detection
   console.log('Camera setup:', cam.eyeX, cam.eyeY, cam.eyeZ);
@@ -238,6 +239,12 @@ function draw() {
   // Update camera
   camera3D.update();
   
+  // Sync p5 camera with our custom camera for gizmos
+  cam.setPosition(camera3D.pos.x, camera3D.pos.y, camera3D.pos.z);
+  let forward = camera3D.getForwardVector();
+  let target = p5.Vector.add(camera3D.pos, forward);
+  cam.lookAt(target.x, target.y, target.z);
+  
   // Render grid then coaster
   drawGrid();
   coaster.render();
@@ -256,52 +263,29 @@ function draw() {
 }
 
 function renderDebugHUD() {
-  // output debug information into the #debug DOM element
   try {
     let dbg = document.getElementById('debug');
     if (!dbg) {
       dbg = document.createElement('div'); dbg.id = 'debug'; document.body.appendChild(dbg);
     }
     let lines = [];
-    if (camera3D) {
-      lines.push('<strong>Player:</strong> ' + nf(camera3D.pos.x,1,1) + ', ' + nf(camera3D.pos.y,1,1) + ', ' + nf(camera3D.pos.z,1,1) + '<br>');
-      lines.push('<strong>Yaw, Pitch:</strong> ' + nf(camera3D.yaw,1,2) + ', ' + nf(camera3D.pitch,1,2) + '<br>');
-    }
-    lines.push('<strong>Mouse:</strong> (' + nf(mouseX,1,0) + ', ' + nf(mouseY,1,0) + ')<br>');
-    try {
-      let r = getRayFromMouse();
-      lines.push('<strong>Ray O:</strong> ' + nf(r.origin.x,1,1) + ',' + nf(r.origin.y,1,1) + ',' + nf(r.origin.z,1,1) + '<br>');
-      lines.push('<strong>Ray D:</strong> ' + nf(r.dir.x,1,2) + ',' + nf(r.dir.y,1,2) + ',' + nf(r.dir.z,1,2) + '<br>');
-    } catch (e) {}
-    let selText = 'none';
-    if (selectedVertexIndex >= 0) {
-      selText = (selectedIsControl ? 'Control ' : 'Vertex ') + selectedVertexIndex;
-      let v = selectedIsControl ? (coaster.controls[selectedVertexIndex] || null) : coaster.getVertex(selectedVertexIndex);
-      if (v) selText += ' (' + nf(v.position.x,1,1) + ',' + nf(v.position.y,1,1) + ',' + nf(v.position.z,1,1) + ')';
-    }
-    lines.push('<strong>Selected:</strong> ' + selText + '<br>');
-    lines.push('<strong>View:</strong> ' + (viewpoints[currentViewpoint] ? viewpoints[currentViewpoint].name : '—') + '<br>');
     
-    // Per-vertex pick debug
-    lines.push('<strong style="color:#f90; margin-top:10px;">==== PICK DEBUG ====</strong>');
-    for (let i = 0; i < coaster.getVertexCount(); i++) {
-      let v = coaster.getVertex(i);
-      let sp = worldToScreen(v.position);
-      let r = max(8, screenRadiusForWorldSize(v.position, 15));
-      let distp = dist(mouseX, mouseY, sp.x, sp.y);
-      let isHit = distp <= r;
-      
-      lines.push('<div style="' + (isHit ? 'color:#0f0' : 'color:#999') + '"><strong>V' + i + ':</strong> scr(' + nf(sp.x,1,0) + ',' + nf(sp.y,1,0) + ') r=' + nf(r,1,1) + ' d=' + nf(distp,1,1) + (isHit ? ' ✓HIT' : '') + '</div>');
+    // Player info
+    if (camera3D) {
+      lines.push('<strong>Player:</strong> (' + nf(camera3D.pos.x,1,1) + ', ' + nf(camera3D.pos.y,1,1) + ', ' + nf(camera3D.pos.z,1,1) + ')');
+      let forward = camera3D.getForwardVector();
+      lines.push('<strong>Look Dir:</strong> (' + nf(forward.x,1,2) + ', ' + nf(forward.y,1,2) + ', ' + nf(forward.z,1,2) + ')');
+      lines.push('<strong>Yaw/Pitch:</strong> ' + nf(camera3D.yaw,1,2) + ', ' + nf(camera3D.pitch,1,2));
     }
-    for (let i = 0; i < (coaster.controls ? coaster.controls.length : 0); i++) {
-      let cv = coaster.controls[i];
-      if (!cv) continue;
-      let sp = worldToScreen(cv.position);
-      let r = max(6, screenRadiusForWorldSize(cv.position, 8));
-      let distp = dist(mouseX, mouseY, sp.x, sp.y);
-      let isHit = distp <= r;
-      
-      lines.push('<div style="' + (isHit ? 'color:#0f0' : 'color:#999') + '"><strong>C' + i + ':</strong> scr(' + nf(sp.x,1,0) + ',' + nf(sp.y,1,0) + ') r=' + nf(r,1,1) + ' d=' + nf(distp,1,1) + (isHit ? ' ✓HIT' : '') + '</div>');
+    lines.push('<strong>Mouse:</strong> (' + nf(mouseX,1,0) + ', ' + nf(mouseY,1,0) + ')');
+    
+    // Gizmo info
+    lines.push('<strong style="color:#f90; margin-top:10px;">==== GIZMOS ====</strong>');
+    for (let i = 0; i < vertexGizmos.length; i++) {
+      let g = vertexGizmos[i];
+      let hoverText = g.hover ? ' HOVER:' + g.hover : '';
+      let clickText = g.gizmoClicked ? ' CLICKED' : '';
+      lines.push('<div style="' + (g.hover ? 'color:#0f0' : 'color:#999') + '"><strong>G' + i + ':</strong> (' + nf(g.pos.x,1,0) + ',' + nf(g.pos.y,1,0) + ',' + nf(g.pos.z,1,0) + ')' + hoverText + clickText + '</div>');
     }
     
     dbg.innerHTML = lines.map(l => typeof l === 'string' && (l.startsWith('<div') || l.startsWith('<strong')) ? l : '<div>' + l + '</div>').join('');
@@ -379,7 +363,6 @@ function processControls() {
 
   // Reset the list of keys which have been immediately pressed
   keysPressedDown = [];
-  keysPressedUp = [];
 }
 
 function keyPressed() {
@@ -396,8 +379,6 @@ function keyReleased() {
   let keyLitteral = '_' + key.toString().toLowerCase();
   keys[keyCode] = false;
   keys[keyLitteral] = false;
-  keysPressedUp[keyCode] = true;
-  keysPressedUp[keyLitteral] = true;
 }
 
 function mouseDragged() {
@@ -607,8 +588,6 @@ class Vertex {
     return dist(this.position.x, this.position.y, this.position.z,
                 other.position.x, other.position.y, other.position.z);
   }
-  
-
 }
 
 // ========== CURVE SEGMENT CLASS ==========
@@ -852,22 +831,22 @@ class Camera3D {
       let horiz_movement = this.getForwardVector();
       horiz_movement.y = 0;
       horiz_movement.normalize();
-      if (keys['_w']) { // W
+      if (keys[87]) { // W
         move.add(horiz_movement);
       }
-      if (keys['_s']) { // S
+      if (keys[83]) { // S
         move.sub(horiz_movement);
       }
-      if (keys['_a']) { // A
+      if (keys[65]) { // A
         move.sub(this.getRightVector());
       }
-      if (keys['_d']) { // D
+      if (keys[68]) { // D
         move.add(this.getRightVector());
       }
-      if (keys['_q']) { // Q down
+      if (keys[81]) { // Q down
         move.y -= 1; // Use 1 since it's a direction
       }
-      if (keys['_e']) { // E up
+      if (keys[69]) { // E up
         move.y += 1;
       }
       // Additional vertical controls: Space = down, CONTROL/Shift = up
