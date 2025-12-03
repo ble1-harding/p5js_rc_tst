@@ -272,12 +272,12 @@ function renderDebugHUD() {
     
     // Player info
     if (camera3D) {
-      lines.push('<strong>Player:</strong> (' + nf(camera3D.pos.x,1,1) + ', ' + nf(camera3D.pos.y,1,1) + ', ' + nf(camera3D.pos.z,1,1) + ')');
+      lines.push('<strong>Player:</strong> (' + nf(camera3D.pos.x,1,1) + ', ' + nf(camera3D.pos.y,1,1) + ', ' + nf(camera3D.pos.z,1,1) + ')' + '<br>');
       let forward = camera3D.getForwardVector();
-      lines.push('<strong>Look Dir:</strong> (' + nf(forward.x,1,2) + ', ' + nf(forward.y,1,2) + ', ' + nf(forward.z,1,2) + ')');
-      lines.push('<strong>Yaw/Pitch:</strong> ' + nf(camera3D.yaw,1,2) + ', ' + nf(camera3D.pitch,1,2));
+      lines.push('<strong>Look Dir:</strong> (' + nf(forward.x,1,2) + ', ' + nf(forward.y,1,2) + ', ' + nf(forward.z,1,2) + ')' + '<br>');
+      lines.push('<strong>Yaw/Pitch:</strong> ' + nf(camera3D.yaw,1,2) + ', ' + nf(camera3D.pitch,1,2) + '<br>');
     }
-    lines.push('<strong>Mouse:</strong> (' + nf(mouseX,1,0) + ', ' + nf(mouseY,1,0) + ')');
+    lines.push('<strong>Mouse:</strong> (' + nf(mouseX,1,0) + ', ' + nf(mouseY,1,0) + ')' + '<br>');
     
     // Gizmo info
     lines.push('<strong style="color:#f90; margin-top:10px;">==== GIZMOS ====</strong>');
