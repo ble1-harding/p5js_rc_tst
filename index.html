@@ -10,6 +10,7 @@
 
     <script src="libraries/p5.min.js"></script>
     <script src="libraries/p5.sound.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/14.8.1/math.js"></script>
   </head>
 
   <body>
@@ -40,8 +41,7 @@
         <li>
           <strong>U/O:</strong> Move selected vertex up/down
         </li>
-        <li><strong>[ / ]:</strong> Move grid plane back/forward</li>
-        <li><strong>P:</strong> Cycle grid axis (XY/YZ/XZ)</li>
+
         <li><strong>R:</strong> Reset scene</li>
       </ul>
       <p>
@@ -63,9 +63,9 @@
     <script src="sketch.js"></script>
     <script>
       document.addEventListener("keydown", function (event) {
-        if (event.ctrlKey) {
-          event.preventDefault();
-        }
+        // if (event.ctrlKey) {
+        //   event.preventDefault();
+        // }
       });
     </script>
   </body>

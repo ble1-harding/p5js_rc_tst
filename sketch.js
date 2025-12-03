@@ -18,16 +18,18 @@ let _isDragging = false;
 let _draggingVertex = false;
 let _draggedVertexIndex = -1;
 let _draggedIsControl = false;
-// Drag threshold (pixels) for distinguishing click vs drag — adjustable via HUD
-let dragThreshold = 4;
+let _draggingArrow = false;
+let _draggedArrowAxis = -1;
+let _hoveredArrowAxis = -1;
+let _arrowDragStart = null;
+// Move speed for arrow dragging — adjustable via HUD
+let moveSpeed = 1.0;
 let _hudNeedsUpdate = true;
 
-// Grid plane for positioning
+// 3D Grid for reference
 let grid = {
-  axis: 0, // 0=XY,1=YZ,2=XZ
-  d: 0, // distance along normal from origin
   spacing: 50,
-  size: 2000
+  size: 1000
 };
 
 // Array to store currently pressed keys
@@ -38,7 +40,7 @@ let keysPressedUp = []; // Ditto, but keys that have been released
 // Persisted settings save/load
 function saveSettings() {
   try {
-    localStorage.setItem('dragThreshold', String(dragThreshold));
+    localStorage.setItem('moveSpeed', String(moveSpeed));
     if (camera3D) {
       localStorage.setItem('cameraPos', JSON.stringify({ x: camera3D.pos.x, y: camera3D.pos.y, z: camera3D.pos.z }));
       localStorage.setItem('cameraYaw', String(camera3D.yaw));
@@ -67,10 +69,10 @@ function saveSettings() {
 function loadSettings() {
   let loadedCamera = false;
   try {
-    let stored = localStorage.getItem('dragThreshold');
+    let stored = localStorage.getItem('moveSpeed');
     if (stored !== null) {
-      let n = parseInt(stored, 10);
-      if (!isNaN(n) && n > 0) dragThreshold = n;
+      let n = parseFloat(stored);
+      if (!isNaN(n) && n > 0) moveSpeed = n;
     }
     // curve type removed
     let cam = localStorage.getItem('cameraPos');
@@ -125,7 +127,7 @@ function exportCoasterJSON() {
   let obj = { vertices: [], controls: [], meta: {} };
   obj.vertices = coaster.vertices.map(v => ({ x: v.position.x, y: v.position.y, z: v.position.z }));
   obj.controls = (coaster.controls || []).map(c => c ? ({ x: c.position.x, y: c.position.y, z: c.position.z }) : null);
-  obj.meta.grid = { axis: grid.axis, d: grid.d, spacing: grid.spacing };
+  obj.meta.moveSpeed = moveSpeed;
   if (camera3D) obj.meta.camera = { x: camera3D.pos.x, y: camera3D.pos.y, z: camera3D.pos.z, yaw: camera3D.yaw, pitch: camera3D.pitch };
   // Use p5 helper to save JSON file
   try {
@@ -163,10 +165,8 @@ function loadCoasterFromJSON(obj) {
     }
     if (obj.meta) {
       // curve type metadata removed
-      if (obj.meta.grid) {
-        grid.axis = obj.meta.grid.axis || grid.axis;
-        grid.d = obj.meta.grid.d || grid.d;
-        grid.spacing = obj.meta.grid.spacing || grid.spacing;
+      if (obj.meta.moveSpeed) {
+        moveSpeed = obj.meta.moveSpeed;
       }
       if (obj.meta.camera && camera3D) {
         camera3D.pos = createVector(obj.meta.camera.x || 0, obj.meta.camera.y || 0, obj.meta.camera.z || 0);
@@ -186,6 +186,7 @@ function setup() {
   coaster = new Coaster();
   hudPanel = new HUDPanel();
   camera3D = new Camera3D();
+
   // Load persisted settings (drag threshold, curve type, camera)
   let hadCamera = loadSettings();
   
@@ -333,17 +334,7 @@ function processControls() {
     setup();
   }
 
-  // Grid depth control: '[' = backward, ']' = forward
-  if (keys['_[']) {
-    grid.d -= grid.spacing;
-  }
-  if (keys['_]']) {
-    grid.d += grid.spacing;
-  }
-  // Toggle grid axis with P
-  if (keysPressedDown['_p']) {
-    grid.axis = (grid.axis + 1) % 3;
-  }
+
   
   // curve type selection removed
   
@@ -402,33 +393,40 @@ function mouseDragged() {
   }
   let dx = mouseX - _mouseDownPos.x;
   let dy = mouseY - _mouseDownPos.y;
-  if (sqrt(dx*dx + dy*dy) > dragThreshold) {
+  if (sqrt(dx*dx + dy*dy) > 4) {
     _isDragging = true;
   }
 
-
-  // If dragging a selected vertex with left button, move it to grid plane intersection
-  if (!hudPanel.mouseOverHUD() && _draggingVertex && mouseButton === LEFT && _draggedVertexIndex >= 0) {
-    let idx = _draggedVertexIndex;
-    let isCONTROL = _draggedIsControl;
-    let r = getRayFromMouse();
-    let gridPlane = getGridPlane();
+  // Handle arrow dragging
+  if (_draggingArrow && _draggedArrowAxis >= 0 && selectedVertexIndex >= 0 && !selectedIsControl) {
+    let selectedV = coaster.getVertex(selectedVertexIndex);
+    let mouseDelta = createVector(mouseX - pmouseX, mouseY - pmouseY);
     
-    let denom = p5.Vector.dot(r.dir, gridPlane.normal);
-    if (abs(denom) > 1e-6) {
-      let t = p5.Vector.dot(p5.Vector.sub(gridPlane.point, r.origin), gridPlane.normal) / denom;
-      if (t > 0) {
-        let ip = p5.Vector.add(r.origin, p5.Vector.mult(r.dir, t));
-        if (isCONTROL) coaster.updateControlPosition(idx, ip);
-        else coaster.updateVertexPosition(idx, ip);
-        coaster.updateCurves();
-        saveSettings();
-      }
+    // Project mouse movement onto the selected axis
+    let axisDir = createVector(0, 0, 0);
+    if (_draggedArrowAxis === 0) axisDir.x = 1;      // X axis
+    else if (_draggedArrowAxis === 1) axisDir.y = -1; // Y axis (up)
+    else axisDir.z = 1;                               // Z axis
+    
+    // Convert axis direction to screen space
+    let worldAxisEnd = p5.Vector.add(selectedV.position, p5.Vector.mult(axisDir, 100));
+    let screenStart = worldToScreen(selectedV.position);
+    let screenEnd = worldToScreen(worldAxisEnd);
+    
+    if (screenStart.z > 0 && screenEnd.z > 0) {
+      let screenAxisDir = createVector(screenEnd.x - screenStart.x, screenEnd.y - screenStart.y).normalize();
+      let projectedMovement = p5.Vector.dot(mouseDelta, screenAxisDir);
+      
+      // Apply movement directly following mouse
+      let movement = p5.Vector.mult(axisDir, projectedMovement * 0.5);
+      selectedV.position.add(movement);
+      
+      coaster.updateCurves();
+      _hudNeedsUpdate = true;
     }
   }
-  // Left-button drag = look around (changed for trackpad friendliness)
-  else if (!hudPanel.mouseOverHUD() && mouseButton === LEFT) {
-    // use explicit delta from current/previous mouse positions for stability
+  // Left-button drag = look around (disabled when dragging gizmo)
+  else if (!hudPanel.mouseOverHUD() && mouseButton === LEFT && !_draggingArrow) {
     let dx = mouseX - pmouseX;
     let dy = mouseY - pmouseY;
     camera3D.look(dx, dy);
@@ -487,27 +485,33 @@ function mousePressed() {
       }
     }
 
-    if (closestIndex >= 0) {
+    // Check if clicking on arrow first
+    if (selectedVertexIndex >= 0 && !selectedIsControl && _hoveredArrowAxis >= 0) {
+      _draggingArrow = true;
+      _draggedArrowAxis = _hoveredArrowAxis;
+      _arrowDragStart = createVector(mouseX, mouseY);
+      return; // Don't change selection when clicking arrow
+    } else if (closestIndex >= 0) {
       selectedVertexIndex = closestIndex;
       selectedIsControl = closestIsControl;
-      // begin dragging this vertex
-      _draggingVertex = true;
-      _draggedVertexIndex = closestIndex;
-      _draggedIsControl = closestIsControl;
-    } else {
-      // clicked empty space: deselect
-      // upon testing, having the vertex remain selected is more convenient
-      // selectedVertexIndex = -1;
-      // selectedIsControl = false;
+      _hudNeedsUpdate = true;
     }
   }
 }
 
 function mouseReleased() {
-  // stop dragging vertex if any
+  // Save settings when arrow dragging ends
+  if (_draggingArrow) {
+    saveSettings();
+  }
+  
+  // stop dragging vertex and arrow
   _draggingVertex = false;
   _draggedVertexIndex = -1;
   _draggedIsControl = false;
+  _draggingArrow = false;
+  _draggedArrowAxis = -1;
+  _arrowDragStart = null;
   _mouseDownPos = null;
   _isDragging = false;
 }
@@ -587,64 +591,45 @@ function screenCoord(pos) {
   return { x: p.x, y: p.y };
 }
 
-function getGridPlane() {
-  // returns { point, normal }
-  if (grid.axis === 0) {
-    // XY plane, normal +Z
-    return { point: createVector(0,0,grid.d), normal: createVector(0,0,1) };
-  } else if (grid.axis === 1) {
-    // YZ plane, normal +X
-    return { point: createVector(grid.d,0,0), normal: createVector(1,0,0) };
-  } else {
-    // XZ plane, normal +Y
-    return { point: createVector(0,grid.d,0), normal: createVector(0,1,0) };
-  }
-}
+
 
 function drawGrid() {
   push();
-  stroke(120);
+  stroke(80, 80, 80, 100);
   strokeWeight(1);
   noFill();
   let half = grid.size / 2;
   let s = grid.spacing;
-  if (grid.axis === 0) {
-    // XY
-    for (let x = -half; x <= half; x += s) {
-      line(x, -half, grid.d, x, half, grid.d);
-    }
-    for (let y = -half; y <= half; y += s) {
-      line(-half, y, grid.d, half, y, grid.d);
-    }
-  } else if (grid.axis === 1) {
-    // YZ plane
-    for (let z = -half; z <= half; z += s) {
-      line(grid.d, -half, z, grid.d, half, z);
-    }
-    for (let y = -half; y <= half; y += s) {
-      line(grid.d, y, -half, grid.d, y, half);
-    }
-  } else {
-    // XZ plane
-    for (let x = -half; x <= half; x += s) {
-      line(x, grid.d, -half, x, grid.d, half);
-    }
-    for (let z = -half; z <= half; z += s) {
-      line(-half, grid.d, z, half, grid.d, z);
-    }
+  
+  // XY plane lines
+  for (let x = -half; x <= half; x += s) {
+    line(x, -half, 0, x, half, 0);
+  }
+  for (let y = -half; y <= half; y += s) {
+    line(-half, y, 0, half, y, 0);
   }
   
-  // Draw origin marker
+  // XZ plane lines
+  for (let x = -half; x <= half; x += s) {
+    line(x, 0, -half, x, 0, half);
+  }
+  for (let z = -half; z <= half; z += s) {
+    line(-half, 0, z, half, 0, z);
+  }
+  
+  // YZ plane lines
+  for (let y = -half; y <= half; y += s) {
+    line(0, y, -half, 0, y, half);
+  }
+  for (let z = -half; z <= half; z += s) {
+    line(0, -half, z, 0, half, z);
+  }
+  
+  // Origin marker
   push();
   stroke(255, 100, 100);
-  strokeWeight(3);
-  if (grid.axis === 0) {
-    point(0, 0, grid.d);
-  } else if (grid.axis === 1) {
-    point(grid.d, 0, 0);
-  } else {
-    point(0, grid.d, 0);
-  }
+  strokeWeight(5);
+  point(0, 0, 0);
   pop();
   
   pop();
@@ -676,15 +661,6 @@ class Vertex {
     push();
     translate(this.position.x, this.position.y, this.position.z);
     
-    // Hover glow
-    /*if (this.hovered && !this.selected) {
-      push();
-      noStroke();
-      fill(255, 215, 0, 50);
-      sphere(size * 1.8);
-      pop();
-    }*/
-
     // Selection outline
     if (this.selected) {
       stroke(255, 0, 255, 120);
@@ -702,15 +678,67 @@ class Vertex {
       fill(100, 200, 255);
     }
 
-    let drawSize = size;//this.selected ? size * 1.4 : size;
+    let drawSize = size;
     sphere(drawSize);
+    
+    // Draw arrows for selected non-control vertices
+    if (this.selected && !this.isControl) {
+      this.drawAxisArrows(size);
+    }
+    
     pop();
   }
+  
+  drawAxisArrows(size) {
+    let arrowLength = size * 2.5;
+    let arrowHead = size * 0.6;
+    strokeWeight(3);
+    
+    // X axis - Red
+    let xColor = _hoveredArrowAxis === 0 || _draggedArrowAxis === 0 ? [255, 150, 150] : [200, 80, 80];
+    stroke(xColor[0], xColor[1], xColor[2]);
+    line(0, 0, 0, arrowLength, 0, 0);
+    push();
+    translate(arrowLength, 0, 0);
+    rotateZ(-PI/2);
+    fill(xColor[0], xColor[1], xColor[2]);
+    noStroke();
+    cone(arrowHead, arrowHead * 1.5);
+    pop();
+    
+    // Y axis - Green (negative Y is up)
+    let yColor = _hoveredArrowAxis === 1 || _draggedArrowAxis === 1 ? [150, 255, 150] : [80, 200, 80];
+    stroke(yColor[0], yColor[1], yColor[2]);
+    line(0, 0, 0, 0, -arrowLength, 0);
+    push();
+    translate(0, -arrowLength, 0);
+    rotateX(PI);
+    fill(yColor[0], yColor[1], yColor[2]);
+    noStroke();
+    cone(arrowHead, arrowHead * 1.5);
+    pop();
+    
+    // Z axis - Blue
+    let zColor = _hoveredArrowAxis === 2 || _draggedArrowAxis === 2 ? [150, 150, 255] : [80, 80, 200];
+    stroke(zColor[0], zColor[1], zColor[2]);
+    line(0, 0, 0, 0, 0, arrowLength);
+    push();
+    translate(0, 0, arrowLength);
+    rotateX(PI/2);
+    fill(zColor[0], zColor[1], zColor[2]);
+    noStroke();
+    cone(arrowHead, arrowHead * 1.5);
+    pop();
+  }
+  
+
   
   distance(other) {
     return dist(this.position.x, this.position.y, this.position.z,
                 other.position.x, other.position.y, other.position.z);
   }
+  
+
 }
 
 // ========== CURVE SEGMENT CLASS ==========
@@ -872,6 +900,13 @@ class Coaster {
       }
     }
     
+    // Check arrow hover for selected vertex
+    _hoveredArrowAxis = -1;
+    if (selectedVertexIndex >= 0 && !selectedIsControl && !_draggingArrow) {
+      let selectedV = this.vertices[selectedVertexIndex];
+      _hoveredArrowAxis = this.checkArrowHover(selectedV.position);
+    }
+    
     // Update HUD highlighting
     this.updateHUDHighlighting(hoveredIndex, hoveredIsControl);
     
@@ -894,6 +929,10 @@ class Coaster {
     for (let c of this.curves) {
       c.render();
     }
+    
+
+    
+
   }
   
   updateHUDHighlighting(hoveredIndex, hoveredIsControl) {
@@ -938,6 +977,116 @@ class Coaster {
   
   getVertex(index) {
     return this.vertices[index];
+  }
+  
+  checkArrowHover(vertexPos) {
+    let arrowLength = 37.5; // size * 2.5 where size = 15
+    let threshold = 20;
+    
+    // Get mouse ray for 3D collision
+    let ray = getRayFromMouse();
+    
+    for (let axis = 0; axis < 3; axis++) {
+      let axisDir = createVector(0, 0, 0);
+      if (axis === 0) axisDir.x = 1;      // X axis
+      else if (axis === 1) axisDir.y = -1; // Y axis (up)
+      else axisDir.z = 1;                  // Z axis
+      
+      let arrowEnd = p5.Vector.add(vertexPos, p5.Vector.mult(axisDir, arrowLength));
+      
+      // Use math.js for precise line-to-ray distance calculation
+      let distance = this.rayToLineDistance(ray.origin, ray.dir, vertexPos, arrowEnd);
+      
+      if (distance < threshold) {
+        // Additional screen-space check for better UX
+        let screenStart = worldToScreen(vertexPos);
+        let screenEnd = worldToScreen(arrowEnd);
+        if (screenStart.z > 0 && screenEnd.z > 0) {
+          let screenDist = this.pointToLineDistance2D(
+            mouseX, mouseY,
+            screenStart.x, screenStart.y,
+            screenEnd.x, screenEnd.y
+          );
+          if (screenDist < 25) return axis;
+        }
+      }
+    }
+    return -1;
+  }
+  
+  pointToLineDistance2D(px, py, x1, y1, x2, y2) {
+    let A = px - x1;
+    let B = py - y1;
+    let C = x2 - x1;
+    let D = y2 - y1;
+    
+    let dot = A * C + B * D;
+    let lenSq = C * C + D * D;
+    
+    if (lenSq === 0) return Math.sqrt(A * A + B * B);
+    
+    let param = dot / lenSq;
+    param = Math.max(0, Math.min(1, param));
+    
+    let xx = x1 + param * C;
+    let yy = y1 + param * D;
+    
+    let dx = px - xx;
+    let dy = py - yy;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  
+
+  
+  rayToLineDistance(rayOrigin, rayDir, lineStart, lineEnd) {
+    // Use math.js for more precise calculations
+    try {
+      let lineDir = [lineEnd.x - lineStart.x, lineEnd.y - lineStart.y, lineEnd.z - lineStart.z];
+      let toRay = [rayOrigin.x - lineStart.x, rayOrigin.y - lineStart.y, rayOrigin.z - lineStart.z];
+      let rayD = [rayDir.x, rayDir.y, rayDir.z];
+      
+      let a = math.dot(rayD, rayD);
+      let b = math.dot(rayD, lineDir);
+      let c = math.dot(lineDir, lineDir);
+      let d = math.dot(rayD, toRay);
+      let e = math.dot(lineDir, toRay);
+      
+      let denom = a * c - b * b;
+      if (Math.abs(denom) < 1e-6) return Infinity;
+      
+      let s = (b * e - c * d) / denom;
+      let t = (a * e - b * d) / denom;
+      
+      t = Math.max(0, Math.min(1, t)); // Clamp to line segment
+      
+      let rayPoint = [rayOrigin.x + s * rayD[0], rayOrigin.y + s * rayD[1], rayOrigin.z + s * rayD[2]];
+      let linePoint = [lineStart.x + t * lineDir[0], lineStart.y + t * lineDir[1], lineStart.z + t * lineDir[2]];
+      
+      return math.distance(rayPoint, linePoint);
+    } catch (err) {
+      // Fallback to p5.js calculation if math.js fails
+      let lineDir = p5.Vector.sub(lineEnd, lineStart);
+      let toRay = p5.Vector.sub(rayOrigin, lineStart);
+      
+      let a = p5.Vector.dot(rayDir, rayDir);
+      let b = p5.Vector.dot(rayDir, lineDir);
+      let c = p5.Vector.dot(lineDir, lineDir);
+      let d = p5.Vector.dot(rayDir, toRay);
+      let e = p5.Vector.dot(lineDir, toRay);
+      
+      let denom = a * c - b * b;
+      if (abs(denom) < 1e-6) return Infinity;
+      
+      let s = (b * e - c * d) / denom;
+      let t = (a * e - b * d) / denom;
+      
+      t = constrain(t, 0, 1);
+      
+      let rayPoint = p5.Vector.add(rayOrigin, p5.Vector.mult(rayDir, s));
+      let linePoint = p5.Vector.add(lineStart, p5.Vector.mult(lineDir, t));
+      
+      return p5.Vector.dist(rayPoint, linePoint);
+    }
   }
 }
 
@@ -1121,9 +1270,8 @@ class HUDPanel {
     this.vertexList = document.createElement('div');
     this.isHidden = false;
     this.controlsRow = document.createElement('div');
-    this.dragLabel = document.createElement('span');
-    this.dragMinus = document.createElement('button'); this.dragMinus.innerText='-';
-    this.dragPlus = document.createElement('button'); this.dragPlus.innerText='+';
+    this.speedLabel = document.createElement('span');
+    this.speedSlider = document.createElement('input'); this.speedSlider.type='range'; this.speedSlider.min='1'; this.speedSlider.max='100'; this.speedSlider.value='10';
     this.importInput = document.createElement('input'); this.importInput.type = 'file'; this.importInput.accept = '.json,application/json'; this.importInput.style.display='none';
     this.importButton = document.createElement('button'); this.importButton.innerText = 'Import JSON';
     this.exportButton = document.createElement('button'); this.exportButton.innerText = 'Export JSON';
@@ -1131,22 +1279,21 @@ class HUDPanel {
     this.clearButton = document.createElement('button'); this.clearButton.innerText = 'Clear all vertices';
     this.testButton = document.createElement('button'); this.testButton.innerText = 'Add test vertices';
     this.coordRow = document.createElement('div');
-    this.xInput = document.createElement('input'); this.xInput.type='number'; this.xInput.className='hud-input';
-    this.yInput = document.createElement('input'); this.yInput.type='number'; this.yInput.className='hud-input';
-    this.zInput = document.createElement('input'); this.zInput.type='number'; this.zInput.className='hud-input';
-    this.applyButton = document.createElement('button'); this.applyButton.innerText='Apply';
+    this.coordInput = document.createElement('input'); this.coordInput.type='text'; this.coordInput.className='hud-input'; this.coordInput.style.width='180px'; this.coordInput.placeholder='x, y, z';
+    this.undoButton = document.createElement('button'); this.undoButton.innerText='Undo'; this.undoButton.className='hud-btn';
+    this.coordHistory = [];
 
     // assemble
     this.titleRow.appendChild(this.title);
     this.titleRow.appendChild(this.hideButton);
     this.container.appendChild(this.titleRow);
     this.container.appendChild(this.vertexList);
-    this.controlsRow.appendChild(this.dragMinus); this.controlsRow.appendChild(this.dragLabel); this.controlsRow.appendChild(this.dragPlus);
+    this.controlsRow.appendChild(this.speedLabel); this.controlsRow.appendChild(this.speedSlider);
     this.controlsRow.appendChild(document.createElement('br'));
     this.controlsRow.appendChild(this.importButton); this.controlsRow.appendChild(this.exportButton); this.controlsRow.appendChild(this.resetButton); this.controlsRow.appendChild(this.clearButton); this.controlsRow.appendChild(this.testButton);
     this.container.appendChild(this.controlsRow);
     this.container.appendChild(document.createElement('hr'));
-    this.coordRow.appendChild(this.xInput); this.coordRow.appendChild(this.yInput); this.coordRow.appendChild(this.zInput); this.coordRow.appendChild(this.applyButton);
+    this.coordRow.appendChild(this.coordInput); this.coordRow.appendChild(this.undoButton);
     this.container.appendChild(this.coordRow);
     this.container.appendChild(this.importInput);
 
@@ -1159,20 +1306,22 @@ class HUDPanel {
     this.resetButton.addEventListener('click', () => { try { localStorage.removeItem('dragThreshold'); localStorage.removeItem('cameraPos'); localStorage.removeItem('cameraYaw'); localStorage.removeItem('cameraPitch'); localStorage.removeItem('controlVertices'); localStorage.removeItem('coasterVertices'); } catch(e){}; location.reload(); });
     this.clearButton.addEventListener('click', () => { coaster.vertices = []; coaster.controls = []; coaster.updateCurves(); selectedVertexIndex = -1; selectedIsControl = false; _hudNeedsUpdate = true; saveSettings(); });
     this.testButton.addEventListener('click', () => { coaster.addVertex(createVector(-200, 0, -300)); coaster.addVertex(createVector(0, -100, 0)); coaster.addVertex(createVector(200, 0, 300)); coaster.updateCurves(); _hudNeedsUpdate = true; saveSettings(); });
-    this.dragMinus.addEventListener('click', ()=>{ dragThreshold = max(1, dragThreshold-1); saveSettings(); this.updateDragLabel(); });
-    this.dragPlus.addEventListener('click', ()=>{ dragThreshold = dragThreshold+1; saveSettings(); this.updateDragLabel(); });
-    this.applyButton.addEventListener('click', ()=>{ if (selectedVertexIndex>=0){ let vx=parseFloat(this.xInput.value); let vy=parseFloat(this.yInput.value); let vz=parseFloat(this.zInput.value); if (!isNaN(vx)&&!isNaN(vy)&&!isNaN(vz)){ if (selectedIsControl) coaster.updateControlPosition(selectedVertexIndex, createVector(vx,vy,vz)); else coaster.updateVertexPosition(selectedVertexIndex, createVector(vx,vy,vz)); coaster.updateCurves(); saveSettings(); } } });
+    this.speedSlider.addEventListener('input', ()=>{ moveSpeed = parseFloat(this.speedSlider.value); saveSettings(); this.updateSpeedLabel(); });
+    this.coordInput.addEventListener('input', ()=>{ this.updateCoordinates(); });
+    this.coordInput.addEventListener('keydown', (e)=>{ e.stopPropagation(); });
+    this.coordInput.addEventListener('keyup', (e)=>{ e.stopPropagation(); });
+    this.undoButton.addEventListener('click', ()=>{ this.undoCoordinates(); });
     this.hideButton.addEventListener('click', ()=>{ this.isHidden = !this.isHidden; this.vertexList.style.display = this.isHidden ? 'none' : 'block'; this.controlsRow.style.display = this.isHidden ? 'none' : 'block'; this.coordRow.style.display = this.isHidden ? 'none' : 'block'; this.hideButton.innerText = this.isHidden ? '+' : '−'; });
   }
 
-  updateDragLabel() { this.dragLabel.innerText = ' Drag threshold: ' + dragThreshold + ' '; }
+  updateSpeedLabel() { this.speedLabel.innerText = ' Move speed: ' + Math.round(moveSpeed) + ' '; this.speedSlider.value = moveSpeed; }
 
   render(coaster, selectedIndex) {
     try {
       console.log('HUDPanel.render called; vertexCount=', coaster.getVertexCount(), 'selectedIndex=', selectedIndex, 'selectedIsControl=', selectedIsControl);
     } catch (e) {}
-    // update drag label
-    this.updateDragLabel();
+    // update speed label
+    this.updateSpeedLabel();
     let vertexCount = coaster.getVertexCount();
     
     // only rebuild the list if vertex count changed
@@ -1185,7 +1334,7 @@ class HUDPanel {
         let div = document.createElement('div'); div.className='hud-vertex'+(i===selectedIndex && !selectedIsControl?' selected':'');
         div.dataset.index = i; div.dataset.isControl = false;
         let del = document.createElement('button'); del.className='hud-btn'; del.innerText='×'; del.addEventListener('click', (ev)=>{ ev.stopPropagation(); coaster.deleteVertex(i); if (selectedVertexIndex===i){ selectedVertexIndex=-1; selectedIsControl=false; } this.render(coaster, selectedIndex); });
-        let content = document.createElement('div'); content.className='hud-vertex-content'; content.innerHTML = '<strong>Vertex '+i+'</strong><div>X: '+v.position.x.toFixed(1)+', Y: '+v.position.y.toFixed(1)+', Z: '+v.position.z.toFixed(1)+'</div>';
+        let content = document.createElement('div'); content.className='hud-vertex-content'; content.innerHTML = '<strong>Vertex '+i+'</strong><div>('+Math.round(v.position.x)+', '+Math.round(v.position.y)+', '+Math.round(v.position.z)+')</div>';
         div.appendChild(content);
         div.appendChild(del);
         div.addEventListener('click', ()=>{ selectedVertexIndex = i; selectedIsControl = false; this.syncCoordInputs(); });
@@ -1208,7 +1357,7 @@ class HUDPanel {
           let cv = coaster.controls[i];
           let cdiv = document.createElement('div'); cdiv.className='hud-vertex hud-control'+(i===selectedIndex && selectedIsControl?' selected':'');
           cdiv.dataset.index = i; cdiv.dataset.isControl = true;
-          let ccontent = document.createElement('div'); ccontent.className='hud-vertex-content'; ccontent.innerHTML = '<strong style="color:#fc8">CONTROL '+i+'</strong><div>X: '+cv.position.x.toFixed(1)+', Y: '+cv.position.y.toFixed(1)+', Z: '+cv.position.z.toFixed(1)+'</div>';
+          let ccontent = document.createElement('div'); ccontent.className='hud-vertex-content'; ccontent.innerHTML = '<strong style="color:#fc8">CONTROL '+i+'</strong><div>('+Math.round(cv.position.x)+', '+Math.round(cv.position.y)+', '+Math.round(cv.position.z)+')</div>';
           cdiv.appendChild(ccontent);
           cdiv.addEventListener('click', ()=>{ selectedVertexIndex = i; selectedIsControl = true; this.syncCoordInputs(); });
           cdiv.addEventListener('mouseenter', ()=>{ 
@@ -1235,14 +1384,39 @@ class HUDPanel {
     if (selectedVertexIndex>=0) {
       let v = selectedIsControl ? (coaster.controls[selectedVertexIndex]||null) : coaster.getVertex(selectedVertexIndex);
       if (v) {
-        this.xInput.value = v.position.x;
-        this.yInput.value = v.position.y;
-        this.zInput.value = v.position.z;
-        this.xInput.style.display='inline-block'; this.yInput.style.display='inline-block'; this.zInput.style.display='inline-block'; this.applyButton.style.display='inline-block';
+        this.coordInput.value = '(' + Math.round(v.position.x) + ', ' + Math.round(v.position.y) + ', ' + Math.round(v.position.z) + ')';
+        this.coordInput.style.display='inline-block'; this.undoButton.style.display='inline-block';
         return;
       }
     }
-    this.xInput.style.display='none'; this.yInput.style.display='none'; this.zInput.style.display='none'; this.applyButton.style.display='none';
+    this.coordInput.style.display='none'; this.undoButton.style.display='none';
+  }
+  
+  updateCoordinates() {
+    if (selectedVertexIndex < 0) return;
+    let coords = this.coordInput.value.split(',').map(s => parseFloat(s.trim()));
+    if (coords.length === 3 && coords.every(c => !isNaN(c))) {
+      let v = selectedIsControl ? (coaster.controls[selectedVertexIndex]||null) : coaster.getVertex(selectedVertexIndex);
+      if (v) {
+        this.coordHistory.push({x: v.position.x, y: v.position.y, z: v.position.z});
+        if (this.coordHistory.length > 10) this.coordHistory.shift();
+        
+        if (selectedIsControl) coaster.updateControlPosition(selectedVertexIndex, createVector(coords[0], coords[1], coords[2]));
+        else coaster.updateVertexPosition(selectedVertexIndex, createVector(coords[0], coords[1], coords[2]));
+        coaster.updateCurves();
+        saveSettings();
+      }
+    }
+  }
+  
+  undoCoordinates() {
+    if (selectedVertexIndex < 0 || this.coordHistory.length === 0) return;
+    let lastPos = this.coordHistory.pop();
+    if (selectedIsControl) coaster.updateControlPosition(selectedVertexIndex, createVector(lastPos.x, lastPos.y, lastPos.z));
+    else coaster.updateVertexPosition(selectedVertexIndex, createVector(lastPos.x, lastPos.y, lastPos.z));
+    coaster.updateCurves();
+    this.syncCoordInputs();
+    saveSettings();
   }
 
   mouseOverHUD() {
