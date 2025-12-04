@@ -228,8 +228,17 @@ function draw() {
 
   processControls();
   
-  // Update vertices from gizmos every frame
-  updateVerticesFromGizmos();
+  // Only update vertices from gizmos if any gizmo is being dragged
+  let anyGizmoClicked = false;
+  for (let gizmo of vertexGizmos) {
+    if (gizmo.gizmoClicked) {
+      anyGizmoClicked = true;
+      break;
+    }
+  }
+  if (anyGizmoClicked) {
+    updateVerticesFromGizmos();
+  }
   
   // Lighting
   lights();
@@ -254,7 +263,10 @@ function draw() {
     hudPanel.render(coaster, selectedVertexIndex);
     _hudNeedsUpdate = false;
   } else {
-    hudPanel.syncCoordInputs();
+    // Only sync inputs if user is not currently typing
+    if (!document.activeElement || document.activeElement.tagName !== 'INPUT') {
+      hudPanel.syncCoordInputs();
+    }
   }
 
   // Update DOM debug panel
@@ -333,31 +345,74 @@ function processControls() {
   
   // curve type selection removed
   
-  // Coordinate editing with arrow keys
-  if (selectedVertexIndex >= 0) {
+  // Coordinate editing with arrow keys - only if not typing in input
+  if (selectedVertexIndex >= 0 && (!document.activeElement || document.activeElement.tagName !== 'INPUT')) {
     let v = selectedIsControl ? (coaster.controls[selectedVertexIndex] || null) : coaster.getVertex(selectedVertexIndex);
-    let speed = keys[SHIFT] ? 10 : 5;
-    
-    if (keys['_j']) {
-      v.position.x -= speed;
+    if (v) {
+      let speed = keys[SHIFT] ? 5 : 2;
+      
+      let horiz_movement = camera3D.getForwardVector();
+      horiz_movement.y = 0;
+      horiz_movement.normalize();
+      horiz_movement.mult(speed);
+      let right_movement = camera3D.getRightVector();
+      right_movement.mult(speed);
+
+      // Debug key states
+      if (keys['_j'] || keys['_l'] || keys['_i'] || keys['_k'] || keys['_u'] || keys['_o']) {
+        console.log('Key pressed:', {
+          j: keys['_j'], l: keys['_l'], i: keys['_i'], 
+          k: keys['_k'], u: keys['_u'], o: keys['_o'],
+          selectedVertex: selectedVertexIndex,
+          isControl: selectedIsControl,
+          activeElement: document.activeElement?.tagName
+        });
+      }
+
+      let moved = false;
+      if (keys['_j']) {
+        console.log('Moving left');
+        v.position.sub(right_movement);
+        moved = true;
+      }
+      if (keys['_l']) {
+        console.log('Moving right');
+        v.position.add(right_movement);
+        moved = true;
+      }
+      if (keys['_i']) {
+        console.log('Moving forward');
+        v.position.add(horiz_movement);
+        moved = true;
+      }
+      if (keys['_k']) {
+        console.log('Moving back');
+        v.position.sub(horiz_movement);
+        moved = true;
+      }
+      if (keys['_u']) {
+        console.log('Moving up');
+        v.position.y -= speed;
+        moved = true;
+      }
+      if (keys['_o']) {
+        console.log('Moving down');
+        v.position.y += speed;
+        moved = true;
+      }
+      
+      if (moved) {
+        // Update corresponding gizmo position
+        if (selectedVertexIndex < vertexGizmos.length) {
+          let gizmo = vertexGizmos[selectedVertexIndex];
+          gizmo.pos.x = v.position.x;
+          gizmo.pos.y = v.position.y;
+          gizmo.pos.z = v.position.z;
+        }
+        coaster.updateCurves();
+        _hudNeedsUpdate = true;
+      }
     }
-    if (keys['_l']) {
-      v.position.x += speed;
-    }
-    if (keys['_i']) {
-      v.position.z += speed;
-    }
-    if (keys['_k']) {
-      v.position.z -= speed;
-    }
-    if (keys['_u']) {
-      v.position.y -= speed;
-    }
-    if (keys['_o']) {
-      v.position.y += speed;
-    }
-    
-    coaster.updateCurves();
   }
 
 
@@ -366,6 +421,11 @@ function processControls() {
 }
 
 function keyPressed() {
+  // Don't capture keys when typing in input fields
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+    return;
+  }
+  
   // For key press checks, simply check if `key[(keycode)]` or `key[_(lowercased key)]` is true
   let keyLitteral = '_' + key.toString().toLowerCase();
   keys[keyCode] = true;
@@ -569,15 +629,22 @@ class Vertex {
     this.isControl = isControl;
   }
   
-  render(size = 15) {
+  render(size = 15, isSelected = false) {
     push();
     translate(this.position.x, this.position.y, this.position.z);
     
-    noStroke();
-    if (this.isControl) {
-      fill(255, 200, 100);
+    if (isSelected) {
+      // Draw magenta selection outline
+      stroke(255, 0, 255);
+      strokeWeight(3);
+      fill(255, 0, 255, 100);
     } else {
-      fill(100, 200, 255);
+      noStroke();
+      if (this.isControl) {
+        fill(255, 200, 100);
+      } else {
+        fill(100, 200, 255);
+      }
     }
 
     sphere(size);
@@ -733,15 +800,19 @@ class Coaster {
   // curve type selection removed; all segments use Beziers
   
   render() {
-    // Render vertices
-    for (let v of this.vertices) {
-      v.render();
+    // Render vertices with selection highlighting
+    for (let i = 0; i < this.vertices.length; i++) {
+      let isSelected = (selectedVertexIndex === i && !selectedIsControl);
+      this.vertices[i].render(15, isSelected);
     }
     
-    // Render controls
+    // Render controls with selection highlighting
     if (this.controls) {
-      for (let control of this.controls) {
-        if (control) control.render(8);
+      for (let i = 0; i < this.controls.length; i++) {
+        if (this.controls[i]) {
+          let isSelected = (selectedVertexIndex === i && selectedIsControl);
+          this.controls[i].render(8, isSelected);
+        }
       }
     }
     
@@ -1007,6 +1078,7 @@ class HUDPanel {
     this.coordInput.addEventListener('input', ()=>{ this.updateCoordinates(); });
     this.coordInput.addEventListener('keydown', (e)=>{ e.stopPropagation(); });
     this.coordInput.addEventListener('keyup', (e)=>{ e.stopPropagation(); });
+    this.coordInput.addEventListener('keypress', (e)=>{ e.stopPropagation(); });
     this.undoButton.addEventListener('click', ()=>{ this.undoCoordinates(); });
     this.hideButton.addEventListener('click', ()=>{ this.isHidden = !this.isHidden; this.vertexList.style.display = this.isHidden ? 'none' : 'block'; this.controlsRow.style.display = this.isHidden ? 'none' : 'block'; this.coordRow.style.display = this.isHidden ? 'none' : 'block'; this.hideButton.innerText = this.isHidden ? '+' : '−'; });
   }
@@ -1047,15 +1119,15 @@ class HUDPanel {
         let content = document.createElement('div'); content.className='hud-vertex-content'; content.innerHTML = '<strong>Vertex '+i+'</strong><div>('+Math.round(v.position.x)+', '+Math.round(v.position.y)+', '+Math.round(v.position.z)+')</div>';
         div.appendChild(content);
         div.appendChild(del);
-        div.addEventListener('click', ()=>{ selectedVertexIndex = i; selectedIsControl = false; this.syncCoordInputs(); });
+        div.addEventListener('click', ()=>{ selectedVertexIndex = i; selectedIsControl = false; this.syncCoordInputs(); this.updateSelectionHighlighting(); });
         div.addEventListener('mouseenter', ()=>{ 
-          if (!(i === selectedIndex && !selectedIsControl)) {
+          if (!(i === selectedVertexIndex && !selectedIsControl)) {
             div.style.backgroundColor = 'rgba(100, 200, 255, 0.1)';
             div.style.border = '1px solid rgba(100, 200, 255, 0.3)';
           }
         });
         div.addEventListener('mouseleave', ()=>{ 
-          if (!(i === selectedIndex && !selectedIsControl)) {
+          if (!(i === selectedVertexIndex && !selectedIsControl)) {
             div.style.backgroundColor = '';
             div.style.border = '';
           }
@@ -1069,15 +1141,15 @@ class HUDPanel {
           cdiv.dataset.index = i; cdiv.dataset.isControl = true;
           let ccontent = document.createElement('div'); ccontent.className='hud-vertex-content'; ccontent.innerHTML = '<strong style="color:#fc8">CONTROL '+i+'</strong><div>('+Math.round(cv.position.x)+', '+Math.round(cv.position.y)+', '+Math.round(cv.position.z)+')</div>';
           cdiv.appendChild(ccontent);
-          cdiv.addEventListener('click', ()=>{ selectedVertexIndex = i; selectedIsControl = true; this.syncCoordInputs(); });
+          cdiv.addEventListener('click', ()=>{ selectedVertexIndex = i; selectedIsControl = true; this.syncCoordInputs(); this.updateSelectionHighlighting(); });
           cdiv.addEventListener('mouseenter', ()=>{ 
-            if (!(i === selectedIndex && selectedIsControl)) {
+            if (!(i === selectedVertexIndex && selectedIsControl)) {
               cdiv.style.backgroundColor = 'rgba(255, 200, 100, 0.1)';
               cdiv.style.border = '1px solid rgba(255, 200, 100, 0.3)';
             }
           });
           cdiv.addEventListener('mouseleave', ()=>{ 
-            if (!(i === selectedIndex && selectedIsControl)) {
+            if (!(i === selectedVertexIndex && selectedIsControl)) {
               cdiv.style.backgroundColor = '';
               cdiv.style.border = '';
             }
@@ -1088,13 +1160,42 @@ class HUDPanel {
     }
     // sync coord inputs for selection
     this.syncCoordInputs();
+    this.updateSelectionHighlighting();
+  }
+  
+  updateSelectionHighlighting() {
+    // Clear all highlights first
+    let hudVertices = document.querySelectorAll('.hud-vertex');
+    hudVertices.forEach(el => {
+      if (!el.matches(':hover')) {
+        el.style.backgroundColor = '';
+        el.style.border = '';
+        el.style.boxShadow = '';
+      }
+    });
+    
+    // Add selection highlight
+    if (selectedVertexIndex >= 0) {
+      let selector = `.hud-vertex[data-index="${selectedVertexIndex}"][data-is-control="${selectedIsControl}"]`;
+      let hudElement = document.querySelector(selector);
+      if (hudElement) {
+        hudElement.style.backgroundColor = 'rgba(255, 0, 255, 0.15)';
+        hudElement.style.border = '2px solid rgba(255, 0, 255, 0.4)';
+        hudElement.style.boxShadow = '0 0 8px rgba(255, 0, 255, 0.3)';
+      }
+    }
   }
 
   syncCoordInputs() {
+    if (this._skipSync) return; // Skip sync temporarily after manual update
     if (selectedVertexIndex>=0) {
       let v = selectedIsControl ? (coaster.controls[selectedVertexIndex]||null) : coaster.getVertex(selectedVertexIndex);
       if (v) {
-        this.coordInput.value = '(' + Math.round(v.position.x) + ', ' + Math.round(v.position.y) + ', ' + Math.round(v.position.z) + ')';
+        let newValue = '(' + Math.round(v.position.x) + ', ' + Math.round(v.position.y) + ', ' + Math.round(v.position.z) + ')';
+        // Only update if value actually changed and input is not focused to prevent cursor jumping
+        if (this.coordInput.value !== newValue && document.activeElement !== this.coordInput) {
+          this.coordInput.value = newValue;
+        }
         this.coordInput.style.display='inline-block'; this.undoButton.style.display='inline-block';
         return;
       }
@@ -1104,7 +1205,9 @@ class HUDPanel {
   
   updateCoordinates() {
     if (selectedVertexIndex < 0) return;
-    let coords = this.coordInput.value.split(',').map(s => parseFloat(s.trim()));
+    // Remove parentheses and split by comma
+    let cleanInput = this.coordInput.value.replace(/[()]/g, '').trim();
+    let coords = cleanInput.split(',').map(s => parseFloat(s.trim()));
     if (coords.length === 3 && coords.every(c => !isNaN(c))) {
       let v = selectedIsControl ? (coaster.controls[selectedVertexIndex]||null) : coaster.getVertex(selectedVertexIndex);
       if (v) {
@@ -1112,9 +1215,21 @@ class HUDPanel {
         if (this.coordHistory.length > 10) this.coordHistory.shift();
         
         if (selectedIsControl) coaster.updateControlPosition(selectedVertexIndex, createVector(coords[0], coords[1], coords[2]));
-        else coaster.updateVertexPosition(selectedVertexIndex, createVector(coords[0], coords[1], coords[2]));
+        else {
+          coaster.updateVertexPosition(selectedVertexIndex, createVector(coords[0], coords[1], coords[2]));
+          // Also update corresponding gizmo position
+          if (selectedVertexIndex < vertexGizmos.length) {
+            let gizmo = vertexGizmos[selectedVertexIndex];
+            gizmo.pos.x = coords[0];
+            gizmo.pos.y = coords[1];
+            gizmo.pos.z = coords[2];
+          }
+        }
         coaster.updateCurves();
         saveSettings();
+        // Prevent sync for a short time
+        this._skipSync = true;
+        setTimeout(() => { this._skipSync = false; }, 100);
       }
     }
   }
