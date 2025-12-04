@@ -411,9 +411,10 @@ function mouseDragged() {
 function mousePressed() {
   // Debug gizmo hover states
   console.log('Mouse pressed at:', mouseX, mouseY);
+  console.log('Camera pos:', cam.eyeX, cam.eyeY, cam.eyeZ);
   for (let i = 0; i < vertexGizmos.length; i++) {
     let gizmo = vertexGizmos[i];
-    console.log(`Gizmo ${i} hover:`, gizmo.hover, 'pos:', gizmo.pos);
+    console.log(`Gizmo ${i}:`, 'hover:', gizmo.hover, 'pos:', gizmo.pos.x, gizmo.pos.y, gizmo.pos.z);
     if (gizmo.hover) {
       console.log(`Updating gizmo ${i}`);
       gizmo.update();
@@ -534,8 +535,10 @@ function initializeGizmos() {
   vertexGizmos = [];
   for (let i = 0; i < coaster.getVertexCount(); i++) {
     let v = coaster.getVertex(i);
+    console.log(`Creating gizmo ${i} at:`, v.position.x, v.position.y, v.position.z);
     vertexGizmos.push(new gizmo(v.position.x, v.position.y, v.position.z));
   }
+  console.log('Total gizmos created:', vertexGizmos.length);
 }
 
 function updateVerticesFromGizmos() {
@@ -549,6 +552,7 @@ function updateVerticesFromGizmos() {
 }
 
 function addVertexGizmo(pos) {
+  console.log('Adding gizmo at:', pos.x, pos.y, pos.z);
   vertexGizmos.push(new gizmo(pos.x, pos.y, pos.z));
 }
 
